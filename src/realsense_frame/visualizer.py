@@ -11,7 +11,7 @@ from realsense_frame.utils import (
 import os  # Import os for path manipulation
 
 
-@click.command()
+@click.command(name="visualize")
 @click.argument(
     "session_path", type=click.Path(exists=True, file_okay=False, dir_okay=True)
 )
@@ -20,7 +20,7 @@ import os  # Import os for path manipulation
     type=click.Path(file_okay=False, dir_okay=True),
     help="Export point clouds to PLY files in the specified directory.",
 )
-def main(session_path, export_ply):
+def visualize_command(session_path, export_ply):
     """Visualize a RealSense capture session."""
     if export_ply and not os.path.exists(export_ply):
         os.makedirs(export_ply)
@@ -31,6 +31,8 @@ def main(session_path, export_ply):
         raise click.ClickException(f"Failed to load session: {e}")
 
     aligner = loader.aligner
+    intrinsics = loader.get_intrinsics()
+    c_intr = intrinsics["color"] or intrinsics["infra1"]
     if aligner:
         logger.info("Intrinsics found. Using realsense-align.")
     else:
@@ -172,6 +174,10 @@ def main(session_path, export_ply):
             idx = max(idx - 1, 0)
 
     cv2.destroyAllWindows()
+
+
+def main():
+    visualize_command()
 
 
 if __name__ == "__main__":

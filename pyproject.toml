@@ -27,8 +27,7 @@ package = true
 realsense-align = { git = "https://github.com/mlouielu/realsense-align", rev = "add-extrinsic" }
 
 [project.scripts]
-realsense-frame-capture = "realsense_frame.capture:main"
-realsense-frame-visualizer = "realsense_frame.visualizer:main"
+realsense-frame = "realsense_frame.cli:main"
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]

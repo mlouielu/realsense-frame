@@ -1004,5 +1004,84 @@ def list_streams_command():
     sys.exit(0)
 
 
+@main.command(name="export-ply")
+@click.argument(
+    "session_path", type=click.Path(exists=True, file_okay=False, dir_okay=True)
+)
+@click.option(
+    "--output",
+    "-o",
+    type=click.Path(file_okay=False, dir_okay=True),
+    default=None,
+    help="Output directory for PLY files. Defaults to <session_path>/ply/",
+)
+@click.option(
+    "--frames",
+    "-f",
+    default=None,
+    help="Frame range to export, e.g. '0-5' or '3'. Defaults to all.",
+)
+def export_ply_command(session_path, output, frames):
+    """Export aligned colored point clouds as PLY files."""
+    from realsense_frame.loader import SessionLoader
+    from realsense_frame.utils import depth_to_pointcloud, write_pointcloud_to_ply
+
+    try:
+        loader = SessionLoader(session_path)
+    except Exception as e:
+        raise click.ClickException(f"Failed to load session: {e}")
+
+    if not loader.aligner:
+        raise click.ClickException(
+            "No valid intrinsics found in session. Cannot align depth to color."
+        )
+
+    intrinsics = loader.get_intrinsics()
+    # After d2c(), depth is in the target camera frame — use target intrinsics
+    target_intr = intrinsics["color"] or intrinsics["infra1"]
+
+    out_dir = output or os.path.join(session_path, "ply")
+    os.makedirs(out_dir, exist_ok=True)
+
+    # Parse frame range
+    start, end = 0, len(loader)
+    if frames:
+        if "-" in frames:
+            parts = frames.split("-")
+            start, end = int(parts[0]), int(parts[1]) + 1
+        else:
+            start, end = int(frames), int(frames) + 1
+    end = min(end, len(loader))
+
+    click.echo(f"Session: {session_path}")
+    click.echo(f"Alignment target: {loader.align_target}")
+    click.echo(
+        f"Extrinsics: {'yes' if loader.aligner.extrinsics else 'no (identity)'}"
+    )
+    click.echo(f"Exporting frames {start}-{end - 1} to {out_dir}/")
+
+    for i in range(start, end):
+        frame = loader.get_frame(i)
+        aligned = frame.d2c()
+
+        if getattr(aligned, "_is_placeholder", True):
+            click.echo(f"  Frame {i:05d}: skipped (alignment failed)")
+            continue
+
+        target = frame.color if loader.align_target == "color" else frame.infra1
+        if target is None or getattr(target, "_is_placeholder", True):
+            click.echo(f"  Frame {i:05d}: skipped (no target image)")
+            continue
+
+        scale = frame.metadata.get("depth_units", 0.001)
+        points, colors = depth_to_pointcloud(aligned, target, target_intr, scale)
+
+        ply_path = os.path.join(out_dir, f"frame_{i:05d}.ply")
+        write_pointcloud_to_ply(ply_path, points, colors)
+        click.echo(f"  Frame {i:05d}: {len(points)} points → {ply_path}")
+
+    click.echo("Done.")
+
+
 if __name__ == "__main__":
     main()
