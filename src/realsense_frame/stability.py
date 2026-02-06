@@ -34,3 +34,15 @@ class StabilityDetector:
             checks.append(np.all(np.std(vals, axis=0) < self.threshold))
             
         return all(checks) if checks else False
+
+    def get_stability_score(self):
+        stds = []
+        if self.has_accel and len(self.accel_history) >= self.history_size:
+            vals = np.array([[e['x'], e['y'], e['z']] for e in self.accel_history])
+            stds.append(np.max(np.std(vals, axis=0)))
+        
+        if self.has_gyro and len(self.gyro_history) >= self.history_size:
+            vals = np.array([[e['x'], e['y'], e['z']] for e in self.gyro_history])
+            stds.append(np.max(np.std(vals, axis=0)))
+            
+        return max(stds) if stds else 1.0 # Default to high score if not enough data
