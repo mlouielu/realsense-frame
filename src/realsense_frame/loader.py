@@ -7,6 +7,7 @@ import glob
 from dataclasses import dataclass
 from typing import Optional, Dict, List
 
+
 @dataclass
 class FrameData:
     index: int
@@ -18,18 +19,19 @@ class FrameData:
     metadata: Dict = None
     imu_samples: List[Dict] = None
 
+
 class SessionLoader:
     def __init__(self, session_path: str):
         self.session_path = session_path
         if not os.path.exists(session_path):
             raise ValueError(f"Session path does not exist: {session_path}")
-        
+
         self.config_path = os.path.join(session_path, "config.json")
         self.config = self._load_json(self.config_path)
-        
+
         # Sort frames by the frame index in the folder name
         self.frame_dirs = sorted(glob.glob(os.path.join(session_path, "frame_*")))
-        
+
         self.dctx = zstd.ZstdDecompressor()
 
     def _load_json(self, path):
@@ -46,7 +48,7 @@ class SessionLoader:
             "color": self.config.get("color_intrinsics"),
             "depth": self.config.get("depth_intrinsics"),
             "infra1": self.config.get("infra1_intrinsics"),
-            "infra2": self.config.get("infra2_intrinsics")
+            "infra2": self.config.get("infra2_intrinsics"),
         }
 
     def get_frame(self, idx: int) -> FrameData:
@@ -54,21 +56,29 @@ class SessionLoader:
             raise IndexError("Frame index out of range")
 
         frame_dir = self.frame_dirs[idx]
-        
+
         # Load Metadata
         meta = self._load_json(os.path.join(frame_dir, "metadata.json"))
-        
+
         # Load Color
         color_path = os.path.join(frame_dir, "color.png")
         color = cv2.imread(color_path) if os.path.exists(color_path) else None
 
         # Load Infrared
         infra1_path = os.path.join(frame_dir, "infra_1.png")
-        infra1 = cv2.imread(infra1_path, cv2.IMREAD_UNCHANGED) if os.path.exists(infra1_path) else None
-        
+        infra1 = (
+            cv2.imread(infra1_path, cv2.IMREAD_UNCHANGED)
+            if os.path.exists(infra1_path)
+            else None
+        )
+
         infra2_path = os.path.join(frame_dir, "infra_2.png")
-        infra2 = cv2.imread(infra2_path, cv2.IMREAD_UNCHANGED) if os.path.exists(infra2_path) else None
-        
+        infra2 = (
+            cv2.imread(infra2_path, cv2.IMREAD_UNCHANGED)
+            if os.path.exists(infra2_path)
+            else None
+        )
+
         # Load Depth (ZST Compressed)
         depth = None
         depth_path = os.path.join(frame_dir, "depth.zst")
@@ -103,5 +113,5 @@ class SessionLoader:
             infra1=infra1,
             infra2=infra2,
             metadata=meta,
-            imu_samples=imu_samples
+            imu_samples=imu_samples,
         )
