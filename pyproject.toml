@@ -23,6 +23,9 @@ build-backend = "hatchling.build"
 [tool.uv]
 package = true
 
+[tool.uv.sources]
+realsense-align = { git = "https://github.com/mlouielu/realsense-align", rev = "add-extrinsic" }
+
 [project.scripts]
 realsense-frame-capture = "realsense_frame.capture:main"
 realsense-frame-visualizer = "realsense_frame.visualizer:main"

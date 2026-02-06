@@ -190,18 +190,10 @@ wheels = [
 [[package]]
 name = "realsense-align"
 version = "0.1.4"
-source = { registry = "https://pypi.org/simple" }
+source = { git = "https://github.com/mlouielu/realsense-align?rev=add-extrinsic#a684f17986841fbfa86bb462afc0bf11c00de667" }
 dependencies = [
     { name = "numpy" },
     { name = "pybind11" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/8c/3c/a8b3ab59d0fd29401fa4ef0cbda716032f9cf121b3bafa46ceb27f40ac62/realsense_align-0.1.4.tar.gz", hash = "sha256:9231795004e1d1143e0820470978c33e3f828768c37435b6e5abf1786357134d", size = 14568, upload-time = "2026-02-06T15:40:49.939Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/a5/46/8120f3eb1c0ffd2c706fcb26f1e74209151a7539375e78e0f08e785a2c8d/realsense_align-0.1.4-cp312-cp312-macosx_14_0_arm64.whl", hash = "sha256:6b5604225ea95dc6b0bdc8530c637791e90236cd75c6327fc3a5b83dbfc0f7c1", size = 364932, upload-time = "2025-05-23T20:41:43.946Z" },
-    { url = "https://files.pythonhosted.org/packages/62/64/e3c3300954f49e9e44fd3fda7d60f124bc097f19b1c0a4f517b49c274ab3/realsense_align-0.1.4-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:5662a6e2c537130a45f9f3157f3e70aeb35ec4646b7997eb543ff426de0ec5b7", size = 188375, upload-time = "2025-05-23T20:41:45.86Z" },
-    { url = "https://files.pythonhosted.org/packages/c8/84/74dc4e924490c0d0c45c44da4c29eb856cbca6295b07b176c51a564bd457/realsense_align-0.1.4-cp312-cp312-win32.whl", hash = "sha256:295c654edcfd5149e89c093c5c9a10e602f0572c5193c06faa84aaf395dcb922", size = 79020, upload-time = "2025-05-23T20:41:47.237Z" },
-    { url = "https://files.pythonhosted.org/packages/3b/9a/762a4dc5a0d6a661143866c3a678b90d574f2bc602cdc30ed79db27c54f3/realsense_align-0.1.4-cp312-cp312-win_amd64.whl", hash = "sha256:b65c446f1940413f5c0dd12e3be91df5843521353cca8d301f5f9209ac8113ed", size = 86338, upload-time = "2025-05-23T20:41:48.952Z" },
-    { url = "https://files.pythonhosted.org/packages/97/0f/2daf143b9ea86f9457f0467e8a90edfeb299f365bc96a621bfa391e3c2e9/realsense_align-0.1.4-cp313-cp313-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:622915064959e9defe9296adb6b7761d166d7ab82d7617dc9a7878c20b1e1f67", size = 199789, upload-time = "2026-02-06T15:40:48.226Z" },
 ]
 
 [[package]]
@@ -228,7 +220,7 @@ requires-dist = [
     { name = "opencv-python" },
     { name = "pyrealsense2" },
     { name = "pytest", specifier = ">=9.0.2" },
-    { name = "realsense-align", specifier = ">=0.1.4" },
+    { name = "realsense-align", git = "https://github.com/mlouielu/realsense-align?rev=add-extrinsic" },
     { name = "toml", specifier = ">=0.10.2" },
     { name = "zstandard", specifier = ">=0.25.0" },
 ]
