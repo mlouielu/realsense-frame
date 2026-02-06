@@ -13,6 +13,7 @@ dependencies = [
     "pytest>=9.0.2",
     "realsense-align>=0.1.4",
     "click",
+    "loguru",
 ]
 
 [build-system]
