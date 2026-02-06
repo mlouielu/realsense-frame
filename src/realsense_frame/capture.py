@@ -166,14 +166,16 @@ class RealSenseCapture:
                 logger.error("Check 'list-streams' for supported combinations.")
             raise click.ClickException(str(e))
 
-        # Get Depth Sensor for Emitter Control
+        # Get Depth Sensor for Emitter Control and other settings
         self.depth_sensor = self.profile.get_device().first_depth_sensor()
         self.emitter_enabled = True
         if self.depth_sensor.supports(rs.option.emitter_enabled):
             self.emitter_enabled = bool(
                 self.depth_sensor.get_option(rs.option.emitter_enabled)
             )
-
+        
+        self._apply_depth_sensor_settings()
+            
         self.print_summary()
         self.save_session_config()
 
@@ -191,6 +193,12 @@ class RealSenseCapture:
             },
             "accel": {"fps": 0},
             "gyro": {"fps": 0},
+            "depth_sensor": { # New section for depth sensor settings
+                "laser_power": 150, # Default laser power
+                "visual_preset": "Default", # Default visual preset
+                "enable_auto_exposure": True, # Default auto exposure
+                "exposure": 8500, # Default manual exposure for depth
+            }
         }
         if path and os.path.exists(path):
             try:
@@ -294,8 +302,76 @@ class RealSenseCapture:
             cfg["infra2_intrinsics"] = self.get_intrinsics(
                 self.profile.get_stream(rs.stream.infrared, 2)
             )
+
+        # Dump current depth sensor options for reproducibility
+        if self.depth_sensor:
+            current_depth_options = {}
+            for option in rs.option.__members__.values():
+                if self.depth_sensor.supports(option):
+                    try:
+                        value = self.depth_sensor.get_option(option)
+                        option_name = str(option).split('.')[-1]
+                        
+                        # Special handling for visual preset to store string name
+                        if option == rs.option.visual_preset:
+                            try:
+                                preset_name = self.depth_sensor.get_option_value_description(rs.option.visual_preset, value)
+                                current_depth_options[option_name] = preset_name
+                            except Exception: # Fallback if description not available for some reason
+                                current_depth_options[option_name] = str(value)
+                        else:
+                            current_depth_options[option_name] = value
+                    except Exception as e:
+                        logger.warning(f"Could not get option {option_name}: {e}")
+            cfg["depth_sensor_current_options"] = current_depth_options
+            
         with open(os.path.join(self.session_dir, "config.json"), "w") as f:
             json.dump(cfg, f, indent=4)
+
+    def _apply_depth_sensor_settings(self):
+        # Apply Depth Sensor Settings from config.toml
+        depth_settings = self.settings.get("depth_sensor", {})
+
+        # Set Laser Power
+        laser_power = depth_settings.get("laser_power")
+        if laser_power is not None and self.depth_sensor.supports(rs.option.laser_power):
+            self.depth_sensor.set_option(rs.option.laser_power, float(laser_power))
+            logger.info(f"Depth sensor option 'Laser Power' set to {laser_power}")
+
+        # Set Visual Preset
+        visual_preset_str = depth_settings.get("visual_preset")
+        if visual_preset_str and self.depth_sensor.supports(rs.option.visual_preset):
+            preset_value = None
+            preset_string_to_int_map = {}
+            # Dynamically get available presets
+            preset_range = self.depth_sensor.get_option_range(rs.option.visual_preset)
+            for i in range(int(preset_range.max) + 1): # Max is inclusive for presets
+                try:
+                    description = self.depth_sensor.get_option_value_description(rs.option.visual_preset, i)
+                    preset_string_to_int_map[description] = i
+                except RuntimeError:
+                    # Some index might not have a description
+                    pass
+            
+            preset_value = preset_string_to_int_map.get(visual_preset_str)
+            
+            if preset_value is not None:
+                self.depth_sensor.set_option(rs.option.visual_preset, int(preset_value))
+                logger.info(f"Depth sensor option 'Visual Preset' set to '{visual_preset_str}'")
+            else:
+                logger.warning(f"Unknown visual preset: '{visual_preset_str}'. Available: {list(preset_string_to_int_map.keys())}")
+        
+        # Set Auto Exposure and Exposure
+        enable_auto_exposure = depth_settings.get("enable_auto_exposure")
+        exposure = depth_settings.get("exposure")
+
+        if enable_auto_exposure is not None and self.depth_sensor.supports(rs.option.enable_auto_exposure):
+            self.depth_sensor.set_option(rs.option.enable_auto_exposure, 1.0 if enable_auto_exposure else 0.0)
+            logger.info(f"Depth sensor option 'Enable Auto Exposure' set to {enable_auto_exposure}")
+            
+        if not enable_auto_exposure and exposure is not None and self.depth_sensor.supports(rs.option.exposure):
+            self.depth_sensor.set_option(rs.option.exposure, float(exposure))
+            logger.info(f"Depth sensor option 'Exposure' set to {exposure} (manual mode)")
 
     def get_intrinsics(self, p):
         try:
@@ -425,6 +501,13 @@ class RealSenseCapture:
         if d is not None:
             colorbar = create_colorbar(d.shape[0])
             d = np.hstack((d, colorbar))
+            # Draw crosshair on depth image
+            h_d, w_d = d.shape[:2]
+            center_x, center_y = w_d // 2, h_d // 2
+            line_length = 10
+            crosshair_color = (0, 0, 255) # Red
+            cv2.line(d, (center_x - line_length, center_y), (center_x + line_length, center_y), crosshair_color, 1)
+            cv2.line(d, (center_x, center_y - line_length), (center_x, center_y + line_length), crosshair_color, 1)
         i1 = process(fs.get_infrared_frame(1)) if self.has_infra1 else None
         i2 = process(fs.get_infrared_frame(2)) if self.has_infra2 else None
 
@@ -438,34 +521,88 @@ class RealSenseCapture:
             return i2 if i2 is not None else np.zeros((480, 640, 3), np.uint8)
 
         # Mode "all" - Tile images
-        valid_imgs = [x for x in [c, d, i1, i2] if x is not None]
+        # Process and collect images, adding colorbar to depth if present
+        valid_imgs = []
+        if c is not None:
+            valid_imgs.append(c)
+        if d is not None: # d already contains the colorbar if depth is enabled
+            valid_imgs.append(d)
+        if i1 is not None:
+            valid_imgs.append(i1)
+        if i2 is not None:
+            valid_imgs.append(i2)
+            
         if not valid_imgs:
             return np.zeros((480, 640, 3), dtype=np.uint8)
 
-        # Simple grid layout
-        count = len(valid_imgs)
-        if count == 1:
-            return valid_imgs[0]
-
-        # Resize to match first image height for stacking
-        h, w = valid_imgs[0].shape[:2]
+        # Ensure all images have a consistent height for stacking
+        h_max = max(img.shape[0] for img in valid_imgs)
         resized = []
         for img in valid_imgs:
-            if img.shape[:2] != (h, w):
-                resized.append(cv2.resize(img, (w, h)))
+            # Resize while maintaining aspect ratio, then pad if necessary
+            # or simply resize to h_max and original width for direct stacking
+            current_h, current_w = img.shape[:2]
+            if current_h != h_max:
+                # Calculate new width to maintain aspect ratio
+                aspect_ratio = current_w / current_h
+                new_w = int(h_max * aspect_ratio)
+                resized.append(cv2.resize(img, (new_w, h_max)))
             else:
                 resized.append(img)
-
+        
+        # Now stack them
+        count = len(resized)
+        if count == 1:
+            return resized[0]
         if count == 2:
             return np.hstack(resized)
         if count <= 4:
-            top = np.hstack(resized[:2])
-            bottom = np.hstack(
-                resized[2:] + [np.zeros_like(resized[0])] * (2 - len(resized[2:]))
-            )
-            return np.vstack([top, bottom])
+            # Pad images to ensure they have the same width for hstack if needed
+            # This part needs careful handling if widths are still different
+            # For simplicity, let's assume they are similar enough or will be visually acceptable
+            # For a grid, we need consistent dimensions in rows/cols
+            
+            # Find max width in the first row for consistent stacking
+            max_w_row1 = max(img.shape[1] for img in resized[:min(count, 2)])
+            row1_padded = []
+            for img in resized[:min(count, 2)]:
+                if img.shape[1] < max_w_row1:
+                    padding = np.zeros((h_max, max_w_row1 - img.shape[1], 3), dtype=img.dtype)
+                    row1_padded.append(np.hstack((img, padding)))
+                else:
+                    row1_padded.append(img)
+            top = np.hstack(row1_padded)
 
-        return valid_imgs[0]  # Fallback
+            if count > 2:
+                max_w_row2 = max(img.shape[1] for img in resized[2:])
+                row2_padded = []
+                for img in resized[2:]:
+                    if img.shape[1] < max_w_row2:
+                        padding = np.zeros((h_max, max_w_row2 - img.shape[1], 3), dtype=img.dtype)
+                        row2_padded.append(np.hstack((img, padding)))
+                    else:
+                        row2_padded.append(img)
+                # Pad if only one image in the second row
+                if len(row2_padded) == 1:
+                    padding = np.zeros((h_max, max_w_row2, 3), dtype=img.dtype)
+                    row2_padded.append(padding)
+                bottom = np.hstack(row2_padded)
+                
+                # Ensure top and bottom have same width for vstack
+                max_final_w = max(top.shape[1], bottom.shape[1])
+                if top.shape[1] < max_final_w:
+                    padding = np.zeros((top.shape[0], max_final_w - top.shape[1], 3), dtype=top.dtype)
+                    top = np.hstack((top, padding))
+                elif bottom.shape[1] < max_final_w:
+                    padding = np.zeros((bottom.shape[0], max_final_w - bottom.shape[1], 3), dtype=bottom.dtype)
+                    bottom = np.hstack((bottom, padding))
+                
+                return np.vstack([top, bottom])
+            else: # count is 1 or 2, handled above, or just top
+                return top
+        
+        return resized[0]  # Fallback for >4 images, or unhandled case
+
 
     def run(self):
         print(
@@ -625,6 +762,28 @@ class RealSenseCapture:
                         cv2.circle(
                             img, indicator_pos, 20, (0, 255, 0), 2
                         )  # Hollow circle
+
+                    # Display center depth in meters
+                    if self.has_depth and latest_fs and latest_fs.get_depth_frame():
+                        df = latest_fs.get_depth_frame()
+                        depth_array = np.asanyarray(df.get_data())
+                        h_d, w_d = depth_array.shape
+                        center_pixel_depth = depth_array[h_d // 2, w_d // 2]
+                        depth_scale = df.get_units()
+                        center_depth_m = center_pixel_depth * depth_scale
+                        
+                        if center_pixel_depth > 0: # Only display if valid depth
+                            depth_text = f"Center Depth: {center_depth_m:.2f}m"
+                            cv2.putText(
+                                img,
+                                depth_text,
+                                (img.shape[1] // 2 - 100, 30), # Adjust position as needed
+                                cv2.FONT_HERSHEY_SIMPLEX,
+                                0.7,
+                                (255, 255, 255),
+                                2,
+                                cv2.LINE_AA,
+                            )
 
                     # Add colorbar if displaying depth
                     if display_modes[current_mode_idx] == "depth":
