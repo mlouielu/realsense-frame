@@ -176,6 +176,11 @@ class RealSenseCapture:
                     else:
                         df = fs.get_depth_frame()
                         img = cv2.applyColorMap(cv2.convertScaleAbs(np.asanyarray(df.get_data()), alpha=0.03), cv2.COLORMAP_JET)
+                    # Overlay stability score
+                    stability_score = self.detector.get_stability_score()
+                    score_text = f"Stability: {stability_score:.2f}"
+                    text_color = (0, 255, 0) if stability_score < self.detector.threshold else (0, 0, 255) # Green if stable, Red if unstable
+                    cv2.putText(img, score_text, (10, img.shape[0] - 20), cv2.FONT_HERSHEY_SIMPLEX, 0.7, text_color, 2, cv2.LINE_AA)
                     cv2.imshow("RealSense", img)
                 key = cv2.waitKey(1) & 0xFF
                 if key == ord('q'): break
@@ -192,15 +197,64 @@ class RealSenseCapture:
             if self.imu_file: self.imu_file.close()
             cv2.destroyAllWindows()
 
-@click.command()
+@click.group()
+def main():
+    """RealSense Capture utilities."""
+    pass
+
+@main.command(name="capture")
 @click.option("--output", default="captures", help="Output directory for captures.")
 @click.option("--config", default="config.toml", help="Path to the configuration file.")
-def main(output, config):
+def capture_command(output, config):
+    """Capture a RealSense session."""
     try:
         RealSenseCapture(output, config).run()
     except click.ClickException as e:
         click.echo(f"Error: {e.message}")
         sys.exit(1)
+
+@main.command(name="list-streams")
+def list_streams_command():
+    """List available RealSense camera streams and formats."""
+    ctx = rs.context()
+    devices = ctx.query_devices()
+    if not devices:
+        click.echo("No RealSense devices found!")
+        sys.exit(1)
+
+    click.echo("Available RealSense Devices and Stream Profiles:")
+    click.echo("="*60)
+
+    for i, device in enumerate(devices):
+        click.echo(f"Device {i}: {device.get_info(rs.camera_info.name)} ({device.get_info(rs.camera_info.serial_number)})")
+        click.echo("-" * 60)
+        
+        sensors = device.query_sensors()
+        for sensor in sensors:
+            click.echo(f"  Sensor: {sensor.get_info(rs.camera_info.name)}")
+            stream_profiles = sensor.get_stream_profiles()
+            
+            # Group profiles by stream type for better readability
+            grouped_profiles = {}
+            for profile in stream_profiles:
+                stream_type = profile.stream_type()
+                if stream_type not in grouped_profiles:
+                    grouped_profiles[stream_type] = []
+                grouped_profiles[stream_type].append(profile)
+
+            for stream_type, profiles in grouped_profiles.items():
+                click.echo(f"    Stream Type: {stream_type}")
+                for profile in profiles:
+                    if profile.is_video_stream_profile():
+                        v_profile = profile.as_video_stream_profile()
+                        click.echo(f"      - {v_profile.width()}x{v_profile.height()} @ {v_profile.fps()}fps, Format: {v_profile.format()}")
+                    elif profile.is_motion_stream_profile():
+                        m_profile = profile.as_motion_stream_profile()
+                        click.echo(f"      - {m_profile.fps()}fps, Format: {m_profile.format()}")
+                    else:
+                        click.echo(f"      - Type: {stream_type}, Format: {profile.format()}")
+        click.echo("="*60)
+    sys.exit(0)
 
 if __name__ == "__main__":
     main()
