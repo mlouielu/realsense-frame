@@ -12,6 +12,7 @@ dependencies = [
     "toml>=0.10.2",
     "pytest>=9.0.2",
     "realsense-align>=0.1.4",
+    "click",
 ]
 
 [build-system]
