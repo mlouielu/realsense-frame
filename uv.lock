@@ -1741,6 +1741,7 @@ dependencies = [
 
 [package.dev-dependencies]
 notebooks = [
+    { name = "ipywidgets" },
     { name = "jupyter" },
     { name = "matplotlib" },
     { name = "plotly" },
@@ -1761,6 +1762,7 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 notebooks = [
+    { name = "ipywidgets" },
     { name = "jupyter" },
     { name = "matplotlib" },
     { name = "plotly" },
