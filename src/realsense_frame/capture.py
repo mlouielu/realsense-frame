@@ -11,6 +11,7 @@ import toml
 import queue
 import shutil
 from datetime import datetime
+from loguru import logger
 from realsense_frame.stability import StabilityDetector
 
 class RealSenseCapture:
@@ -22,16 +23,22 @@ class RealSenseCapture:
         if not os.path.exists(self.session_dir):
             os.makedirs(self.session_dir)
 
+        # Setup loguru to log to both console and session file
+        logger.remove() # Remove default handler
+        logger.add(sys.stderr, format="<green>[{time:HH:mm:ss}]</green> <level>{message}</level>", level="INFO")
+        logger.add(os.path.join(self.session_dir, "session.log"), level="DEBUG", rotation="10 MB")
+
         self.pipeline = rs.pipeline()
         self.config = rs.config()
 
         self.ctx = rs.context()
         devices = self.ctx.query_devices()
         if not devices:
+            logger.error("No RealSense devices found!")
             raise click.ClickException("No RealSense devices found!")
 
         device = devices[0]
-        print(f"Using device: {device.get_info(rs.camera_info.name)}")
+        logger.info(f"Using device: {device.get_info(rs.camera_info.name)}")
 
         self.available_streams = []
         for sensor in device.query_sensors():
@@ -113,7 +120,7 @@ class RealSenseCapture:
                 user = toml.load(path)
                 for s in default:
                     if s in user: default[s].update(user[s])
-            except Exception as e: print(f"Config error: {e}")
+            except Exception as e: logger.error(f"Config error: {e}")
         return default
 
     def frame_callback(self, frame):
@@ -155,18 +162,20 @@ class RealSenseCapture:
                 self.dropped_frames += 1
 
     def print_summary(self):
-        print("\n" + "="*40)
-        print("CAPTURE SESSION STARTED")
-        print(f"Output: {self.session_dir}")
-        print("-" * 40)
-        print("Streams:")
+        logger.info("\n" + "="*40)
+        logger.info("CAPTURE SESSION STARTED")
+        logger.info(f"Output: {self.session_dir}")
+        logger.info("-" * 40)
+        logger.info("Streams:")
         for s in self.profile.get_streams():
+            s_name = s.stream_name()
             if s.is_video_stream_profile():
                 p = s.as_video_stream_profile()
-                print(f"  - {s.stream_name()}: {p.width()}x{p.height()} @ {p.fps()}fps ({p.format()})")
+                fmt = str(p.format()).split(".")[-1].upper()
+                logger.info(f"  - {s_name}: {p.width()}x{p.height()} @ {p.fps()}fps ({fmt})")
             else:
-                print(f"  - {s.stream_name()}: {s.fps()}Hz")
-        print("="*40 + "\n")
+                logger.info(f"  - {s_name}: {s.fps()}Hz")
+        logger.info("="*40 + "\n")
 
     def save_session_config(self):
         cfg = {}
@@ -182,11 +191,15 @@ class RealSenseCapture:
             return {"width": i.width, "height": i.height, "ppx": i.ppx, "ppy": i.ppy, "fx": i.fx, "fy": i.fy, "model": str(i.model), "coeffs": i.coeffs}
         except: return None
 
-    def save_frame(self, fs):
+    def save_frame(self, fs, trigger="manual"):
         ts_str = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
         fdir = os.path.join(self.session_dir, f"frame_{self.frame_count:05d}_{ts_str}")
         os.makedirs(fdir)
-        meta = {"index": self.frame_count, "ts_iso": datetime.now().isoformat()}
+        meta = {
+            "index": self.frame_count, 
+            "ts_iso": datetime.now().isoformat(),
+            "trigger": trigger
+        }
         if self.has_color:
             cf = fs.get_color_frame()
             if cf:
@@ -218,7 +231,7 @@ class RealSenseCapture:
         if self.latest_accel: meta["accel"] = {"x": self.latest_accel.x, "y": self.latest_accel.y, "z": self.latest_accel.z}
         if self.latest_gyro: meta["gyro"] = {"x": self.latest_gyro.x, "y": self.latest_gyro.y, "z": self.latest_gyro.z}
         with open(os.path.join(fdir, "metadata.json"), "w") as f: json.dump(meta, f, indent=4)
-        print(f"Frame saved: {os.path.basename(fdir)}")
+        logger.debug(f"Frame saved: {os.path.basename(fdir)}")
         self.frame_count += 1
         self.last_capture_ts = time.time()
 
@@ -276,6 +289,7 @@ class RealSenseCapture:
         auto, last_auto = False, 0
         auto_period = 2.0 # Minimum period for auto-capture
         self.last_capture_ts = 0
+        latest_fs = None
         
         display_modes = ["all"]
         if self.has_color: display_modes.append("color")
@@ -297,6 +311,7 @@ class RealSenseCapture:
                 is_warmup = (time.time() - self.start_time) < 2.0
 
                 if fs:
+                    latest_fs = fs
                     img = self._get_display_image(fs, display_modes[current_mode_idx])
                     
                     # Update Disk Usage (every 2s)
@@ -373,23 +388,29 @@ class RealSenseCapture:
                                 should_auto = True
                                 
                         if should_auto:
-                            self.save_frame(fs)
+                            self.save_frame(fs, trigger="auto")
+                            logger.info(f"[*] Auto-capture saved: frame_{self.frame_count-1:05d}")
                             last_auto = time.time()
 
                 key = cv2.waitKey(1) & 0xFF
                 if key == ord('q'): break
                 elif not is_warmup:
-                    if key == ord('c') and fs: self.save_frame(fs)
+                    if key == ord('c') and latest_fs: 
+                        self.save_frame(latest_fs, trigger="manual")
+                        logger.info(f"[*] Manual capture saved: frame_{self.frame_count-1:05d}")
                     elif key == ord('a'):
                         auto = not auto
-                        print(f"Auto-capture: {'ON' if auto else 'OFF'}")
+                        state = "ENABLED" if auto else "DISABLED"
+                        logger.info(f"[!] Auto-capture: {state}")
                     elif key == ord('v'):
                         current_mode_idx = (current_mode_idx + 1) % len(display_modes)
+                        logger.info(f"[!] View mode: {display_modes[current_mode_idx].upper()}")
                     elif key == ord('l'):
                          if self.depth_sensor.supports(rs.option.emitter_enabled):
                             self.emitter_enabled = not self.emitter_enabled
                             self.depth_sensor.set_option(rs.option.emitter_enabled, 1.0 if self.emitter_enabled else 0.0)
-                            print(f"Emitter: {'ON' if self.emitter_enabled else 'OFF'}")
+                            state = "ON" if self.emitter_enabled else "OFF"
+                            logger.info(f"[!] Laser Emitter: {state}")
 
         finally:
             self.pipeline.stop()
@@ -418,10 +439,10 @@ def list_streams_command():
     ctx = rs.context()
     devices = ctx.query_devices()
     if not devices:
-        click.echo("No RealSense devices found!")
+        click.echo("Error: No RealSense devices found!")
         sys.exit(1)
 
-    click.echo("Available RealSense Devices and Stream Profiles:")
+    click.echo("\nAvailable RealSense Devices and Stream Profiles:")
     click.echo("="*60)
 
     for i, device in enumerate(devices):
@@ -436,7 +457,7 @@ def list_streams_command():
             # Group profiles by stream type for better readability
             grouped_profiles = {}
             for profile in stream_profiles:
-                stream_type = profile.stream_type()
+                stream_type = str(profile.stream_type()).split(".")[-1]
                 if stream_type not in grouped_profiles:
                     grouped_profiles[stream_type] = []
                 grouped_profiles[stream_type].append(profile)
@@ -444,14 +465,15 @@ def list_streams_command():
             for stream_type, profiles in grouped_profiles.items():
                 click.echo(f"    Stream Type: {stream_type}")
                 for profile in profiles:
+                    fmt = str(profile.format()).split(".")[-1]
                     if profile.is_video_stream_profile():
                         v_profile = profile.as_video_stream_profile()
-                        click.echo(f"      - {v_profile.width()}x{v_profile.height()} @ {v_profile.fps()}fps, Format: {v_profile.format()}")
+                        click.echo(f"      - {v_profile.width()}x{v_profile.height()} @ {v_profile.fps()}fps, Format: {fmt}")
                     elif profile.is_motion_stream_profile():
                         m_profile = profile.as_motion_stream_profile()
-                        click.echo(f"      - {m_profile.fps()}fps, Format: {m_profile.format()}")
+                        click.echo(f"      - {m_profile.fps()}fps, Format: {fmt}")
                     else:
-                        click.echo(f"      - Type: {stream_type}, Format: {profile.format()}")
+                        click.echo(f"      - Type: {stream_type}, Format: {fmt}")
         click.echo("="*60)
     sys.exit(0)
 

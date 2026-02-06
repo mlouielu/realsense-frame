@@ -3,6 +3,7 @@ import cv2
 import numpy as np
 import realsense_align as ra
 from realsense_frame.loader import SessionLoader
+from loguru import logger
 import os # Import os for path manipulation
 
 def depth_to_pointcloud(depth_image, color_image, depth_intrinsics, depth_scale=0.001):
@@ -107,20 +108,20 @@ def main(session_path, export_ply):
 
     aligner = None
     if c_intr and d_intr:
-        click.echo("Intrinsics found. Using realsense-align.")
+        logger.info("Intrinsics found. Using realsense-align.")
         try:
             aligner = RealSenseAligner(c_intr, d_intr)
         except Exception as e:
-            click.echo(f"Warning: Failed to initialize aligner: {e}")
+            logger.warning(f"Failed to initialize aligner: {e}")
     else:
-        click.echo("Warning: Intrinsics missing. Alignment disabled.")
+        logger.warning("Intrinsics missing. Alignment disabled.")
 
-    click.echo(f"Loaded {len(loader)} frames. Controls:")
-    click.echo("  [n/Right]: Next Frame")
-    click.echo("  [p/Left]:  Previous Frame")
-    click.echo("  [q]:       Quit")
+    logger.info(f"Loaded {len(loader)} frames. Controls:")
+    logger.info("  [n/Right]: Next Frame")
+    logger.info("  [p/Left]:  Previous Frame")
+    logger.info("  [q]:       Quit")
     if export_ply:
-        click.echo(f"  PLY export enabled to: {export_ply}")
+        logger.info(f"  PLY export enabled to: {export_ply}")
 
     idx = 0
     while True:
@@ -172,7 +173,7 @@ def main(session_path, export_ply):
             export_filename = os.path.join(export_ply, f"frame_{idx:05d}.ply")
             points, colors = depth_to_pointcloud(aligned_depth, frame.color, c_intr, frame.metadata.get("depth_units", 0.001))
             write_pointcloud_to_ply(export_filename, points, colors)
-            click.echo(f"Exported {export_filename}")
+            logger.debug(f"Exported {export_filename}")
 
         # Overlay Info
         info_txt = [
