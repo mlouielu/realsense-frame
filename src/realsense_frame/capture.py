@@ -53,22 +53,21 @@ class RealSenseCapture:
             self.config.enable_stream(rs.stream.color, c.get("width", 640), c.get("height", 480),
                                      fmt_map.get(c.get("format", "bgr8"), rs.format.bgr8), c.get("fps", 30))
 
-        self.has_depth = any(s[0] == rs.stream.depth for s in self.available_streams)
-        if self.has_depth:
-            d = self.settings.get("depth", {})
-            self.config.enable_stream(rs.stream.depth, d.get("width", 640), d.get("height", 480),
-                                     fmt_map.get(d.get("format", "z16"), rs.format.z16), d.get("fps", 30))
+        s = self.settings.get("stereo", {})
+        sw, sh, sfps = s.get("width", 640), s.get("height", 480), s.get("fps", 30)
 
-        self.has_infra1 = any(s[0] == rs.stream.infrared and s[1] == 1 for s in self.available_streams)
-        self.has_infra2 = any(s[0] == rs.stream.infrared and s[1] == 2 for s in self.available_streams)
-        if self.has_infra1 or self.has_infra2:
-            i = self.settings.get("infrared", {})
-            if self.has_infra1:
-                self.config.enable_stream(rs.stream.infrared, 1, i.get("width", 640), i.get("height", 480),
-                                         fmt_map.get(i.get("format", "y8"), rs.format.y8), i.get("fps", 30))
-            if self.has_infra2:
-                self.config.enable_stream(rs.stream.infrared, 2, i.get("width", 640), i.get("height", 480),
-                                         fmt_map.get(i.get("format", "y8"), rs.format.y8), i.get("fps", 30))
+        self.has_depth = s.get("enable_depth", True) and any(st[0] == rs.stream.depth for st in self.available_streams)
+        if self.has_depth:
+            self.config.enable_stream(rs.stream.depth, sw, sh, fmt_map.get(s.get("depth_format", "z16"), rs.format.z16), sfps)
+
+        want_infra = s.get("enable_infra", True)
+        self.has_infra1 = want_infra and any(st[0] == rs.stream.infrared and st[1] == 1 for st in self.available_streams)
+        self.has_infra2 = want_infra and any(st[0] == rs.stream.infrared and st[1] == 2 for st in self.available_streams)
+        
+        if self.has_infra1:
+            self.config.enable_stream(rs.stream.infrared, 1, sw, sh, fmt_map.get(s.get("infra_format", "y8"), rs.format.y8), sfps)
+        if self.has_infra2:
+            self.config.enable_stream(rs.stream.infrared, 2, sw, sh, fmt_map.get(s.get("infra_format", "y8"), rs.format.y8), sfps)
 
         self.has_accel = any(s[0] == rs.stream.accel for s in self.available_streams)
         self.has_gyro = any(s[0] == rs.stream.gyro for s in self.available_streams)
@@ -99,21 +98,13 @@ class RealSenseCapture:
         self.fps_counters = {}
         self.stream_fps = {}
 
-        # Validate Depth/IR matching for Stereo Module
-        if self.has_depth and (self.has_infra1 or self.has_infra2):
-            d = self.settings.get("depth", {})
-            i = self.settings.get("infrared", {})
-            if d.get("width") != i.get("width") or d.get("height") != i.get("height") or d.get("fps") != i.get("fps"):
-                logger.warning("Resolution/FPS mismatch detected between Depth and Infrared!")
-                logger.warning("On most RealSense devices, these must match because they share the same sensor.")
-
         try:
             self.profile = self.pipeline.start(self.config, self.frame_callback)
         except RuntimeError as e:
             if "Couldn't resolve requests" in str(e):
                 logger.error("!!! RealSense Error: Couldn't resolve requests !!!")
-                logger.error("This usually means your Depth and Infrared resolutions or FPS do not match.")
-                logger.error("Please ensure [depth] and [infrared] in config.toml have identical width, height, and fps.")
+                logger.error("This often happens if you requested a resolution/FPS combination not supported by the Stereo Module.")
+                logger.error("Check 'list-streams' for supported combinations.")
             raise click.ClickException(str(e))
 
         # Get Depth Sensor for Emitter Control
@@ -126,16 +117,24 @@ class RealSenseCapture:
         self.save_session_config()
 
     def load_config(self, path):
-        default = {"color": {"width": 640, "height": 480, "fps": 30, "format": "bgr8"},
-                   "depth": {"width": 640, "height": 480, "fps": 30, "format": "z16"},
-                   "infrared": {"width": 640, "height": 480, "fps": 30, "format": "y8"},
-                   "accel": {"fps": 0}, "gyro": {"fps": 0}}
+        default = {
+            "color": {"width": 640, "height": 480, "fps": 30, "format": "bgr8"},
+            "stereo": {
+                "width": 640, "height": 480, "fps": 30, 
+                "enable_depth": True, "enable_infra": True,
+                "depth_format": "z16", "infra_format": "y8"
+            },
+            "accel": {"fps": 0}, 
+            "gyro": {"fps": 0}
+        }
         if path and os.path.exists(path):
             try:
                 user = toml.load(path)
-                for s in default:
-                    if s in user: default[s].update(user[s])
-            except Exception as e: logger.error(f"Config error: {e}")
+                for section in default:
+                    if section in user:
+                        default[section].update(user[section])
+            except Exception as e:
+                logger.error(f"Config error: {e}")
         return default
 
     def frame_callback(self, frame):

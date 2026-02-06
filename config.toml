@@ -4,17 +4,14 @@ height = 480
 fps = 30
 format = "bgr8"
 
-[depth]
+[stereo]
 width = 1280
 height = 720
 fps = 6
-format = "z16"
-
-[infrared]
-width = 1280
-height = 720
-fps = 6
-format = "y8"
+enable_depth = true
+enable_infra = true
+depth_format = "z16"
+infra_format = "y8"
 
 [accel]
 fps = 0 # 0 means default/max supported
