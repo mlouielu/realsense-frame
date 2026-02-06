@@ -313,6 +313,26 @@ class RealSenseCapture:
                 self.profile.get_stream(rs.stream.infrared, 2)
             )
 
+        # Save extrinsics
+        if self.has_depth:
+            depth_profile = self.profile.get_stream(rs.stream.depth)
+            if self.has_color:
+                ext = depth_profile.get_extrinsics_to(
+                    self.profile.get_stream(rs.stream.color)
+                )
+                cfg["depth_to_color_extrinsics"] = {
+                    "rotation": list(ext.rotation),
+                    "translation": list(ext.translation),
+                }
+            if self.has_infra1:
+                ext = depth_profile.get_extrinsics_to(
+                    self.profile.get_stream(rs.stream.infrared, 1)
+                )
+                cfg["depth_to_infra1_extrinsics"] = {
+                    "rotation": list(ext.rotation),
+                    "translation": list(ext.translation),
+                }
+
         # Dump current depth sensor options for reproducibility
         if self.depth_sensor:
             current_depth_options = {}
