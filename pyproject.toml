@@ -1,0 +1,28 @@
+[project]
+name = "realsense-frame"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "pyrealsense2",
+    "numpy",
+    "opencv-python",
+    "zstandard>=0.25.0",
+    "toml>=0.10.2",
+    "pytest>=9.0.2",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.uv]
+package = true
+
+[project.scripts]
+realsense-frame-capture = "realsense_frame.capture:main"
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
