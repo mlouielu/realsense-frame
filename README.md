@@ -1,20 +1,17 @@
 # RealSense Frame Capture
 
-A professional utility to capture synchronized RGB-D and high-frequency IMU data from Intel RealSense cameras.
+A professional utility to capture synchronized RGB-D and high-frequency IMU data from Intel RealSense cameras, featuring a built-in dataloader and visualizer.
 
 ## Features
 - **Synchronized RGB-D**: Captures color and depth frames.
 - **High-Frequency IMU**: Records Accelerometer and Gyroscope data at native frequencies (e.g., 200Hz+) using callback-driven architecture.
-- **Depth Compression**: Saves depth data as `zstandard` (`.zst`) compressed files to save space.
-- **Smart Auto-Capture**: Automatically triggers a capture when the camera is detected as stable (not moving).
-- **Session-based Organization**:
-    - `config.json`: Camera intrinsics and stream configuration.
-    - `imu.jsonl`: Continuous high-frequency IMU log for the entire session.
-    - `frame_NNNNN_TIMESTAMP/`: Individual directories per frame containing raw data, frame-specific metadata, and a window of high-frequency IMU samples.
-- **Configurable**: Define resolution, FPS, and formats via `config.toml`.
+- **Depth Compression**: Saves depth data as `zstandard` (`.zst`) compressed files.
+- **Alignment Support**: Built-in integration with `realsense-align` for metric-accurate depth-to-RGB projection.
+- **Smart Auto-Capture**: Automatically triggers a capture when the camera is detected as stable.
+- **API/Dataloader**: Python API for easy session processing and frame access.
 
 ## Requirements
-- Python 3.13+
+- Python 3.12+ (required for `realsense-align` compatibility)
 - Intel RealSense Camera (D400 series recommended)
 - `uv` for dependency management.
 
@@ -24,20 +21,49 @@ uv sync
 ```
 
 ## Usage
-Run the capture tool:
-```bash
-uv run realsense-frame-capture --output my_captures --config config.toml
-```
 
-### Controls:
+### 1. Capture Data
+Run the capture tool to start a new session:
+```bash
+uv run realsense-frame-capture --output captures --config config.toml
+```
 - `c`: Capture frame manually.
 - `a`: Toggle auto-capture on stability.
 - `q`: Quit.
 
-### Development:
-Run unit tests for stability detection:
+### 2. Visualize Session
+Browse captured frames with real-time alignment:
 ```bash
-uv run pytest
+uv run realsense-frame-visualizer captures/session_YYYYMMDD_HHMMSS
+```
+- `n` / `Right Arrow`: Next Frame.
+- `p` / `Left Arrow`: Previous Frame.
+- `q`: Quit.
+
+### 3. Developer API (Dataloader)
+Access session data programmatically:
+```python
+from realsense_frame.loader import SessionLoader
+
+loader = SessionLoader("captures/session_20260206_120000")
+frame = loader.get_frame(0)
+
+print(f"Timestamp: {frame.timestamp}")
+# frame.color: numpy BGR image
+# frame.depth: numpy uint16 depth map (decompressed)
+# frame.imu_samples: list of high-freq IMU readings
+```
+
+## Session Directory Structure
+```text
+captures/session_TIMESTAMP/
+├── config.json          # Global camera intrinsics
+├── imu.jsonl            # Full session high-frequency IMU log
+└── frame_00000_TS/      # Individual frame directory
+    ├── color.png        # RGB Image
+    ├── depth.zst        # Zstandard compressed depth
+    ├── metadata.json    # Frame timestamps and IMU snapshot
+    └── imu.jsonl        # High-freq IMU window (latest 100 samples)
 ```
 
 ## Configuration (`config.toml`)
@@ -55,7 +81,7 @@ fps = 30
 format = "z16"
 
 [accel]
-fps = 0 # 0 for default/max
+fps = 0 # 0 for max supported
 
 [gyro]
 fps = 0
