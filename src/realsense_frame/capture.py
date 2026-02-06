@@ -13,7 +13,7 @@ import shutil
 from datetime import datetime
 from loguru import logger
 from realsense_frame.stability import StabilityDetector
-
+from realsense_frame.utils import create_colorbar # Import create_colorbar
 
 class RealSenseCapture:
     def __init__(self, output_dir="captures", config_path=None):
@@ -21,6 +21,7 @@ class RealSenseCapture:
 
         session_id = datetime.now().strftime("%Y%m%d_%H%M%S")
         self.session_dir = os.path.join(output_dir, f"session_{session_id}")
+
         if not os.path.exists(self.session_dir):
             os.makedirs(self.session_dir)
 
@@ -138,7 +139,7 @@ class RealSenseCapture:
 
         self.detector = StabilityDetector(
             history_size=100,
-            threshold=0.05,
+            threshold=0.5,
             has_accel=self.has_accel,
             has_gyro=self.has_gyro,
         )
@@ -421,6 +422,9 @@ class RealSenseCapture:
         # Collect available frames
         c = process(fs.get_color_frame()) if self.has_color else None
         d = process(fs.get_depth_frame(), is_depth=True) if self.has_depth else None
+        if d is not None:
+            colorbar = create_colorbar(d.shape[0])
+            d = np.hstack((d, colorbar))
         i1 = process(fs.get_infrared_frame(1)) if self.has_infra1 else None
         i2 = process(fs.get_infrared_frame(2)) if self.has_infra2 else None
 
@@ -621,6 +625,11 @@ class RealSenseCapture:
                         cv2.circle(
                             img, indicator_pos, 20, (0, 255, 0), 2
                         )  # Hollow circle
+
+                    # Add colorbar if displaying depth
+                    if display_modes[current_mode_idx] == "depth":
+                        colorbar = create_colorbar(img.shape[0])
+                        img = np.hstack((img, colorbar))
 
                     cv2.imshow("RealSense", img)
 

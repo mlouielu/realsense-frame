@@ -4,68 +4,7 @@ import numpy as np
 import realsense_align as ra
 from realsense_frame.loader import SessionLoader
 from loguru import logger
-import os  # Import os for path manipulation
-
-
-def depth_to_pointcloud(depth_image, color_image, depth_intrinsics, depth_scale=0.001):
-    """Converts a depth image and color image to a colored 3D point cloud."""
-    # Ensure depth_image is float32 for calculations
-    depth_image = depth_image.astype(np.float32) * depth_scale
-
-    # Get intrinsics
-    fx = depth_intrinsics["fx"]
-    fy = depth_intrinsics["fy"]
-    ppx = depth_intrinsics["ppx"]
-    ppy = depth_intrinsics["ppy"]
-
-    h, w = depth_image.shape
-
-    # Create a grid of pixel coordinates
-    u, v = np.meshgrid(np.arange(w), np.arange(h))
-
-    # Calculate 3D points
-    z = depth_image
-    x = (u - ppx) * z / fx
-    y = (v - ppy) * z / fy
-
-    points = np.stack((x, y, z), axis=-1)
-
-    # Reshape for PLY
-    points = points.reshape(-1, 3)
-    colors = color_image.reshape(-1, 3)  # Assuming BGR, will convert to RGB for PLY
-
-    # Filter out invalid points (where depth is 0)
-    valid_mask = z.reshape(-1) > 0
-    points = points[valid_mask]
-    colors = colors[valid_mask]
-
-    return points, colors
-
-
-def write_pointcloud_to_ply(filename, points, colors=None):
-    """Writes a point cloud to a PLY file."""
-    with open(filename, "w") as f:
-        f.write("ply\n")
-        f.write("format ascii 1.0\n")
-        f.write(f"element vertex {len(points)}\n")
-        f.write("property float x\n")
-        f.write("property float y\n")
-        f.write("property float z\n")
-        if colors is not None:
-            f.write("property uchar red\n")
-            f.write("property uchar green\n")
-            f.write("property uchar blue\n")
-        f.write("end_header\n")
-
-        for i in range(len(points)):
-            if colors is not None:
-                # OpenCV uses BGR, PLY usually expects RGB
-                f.write(
-                    f"{points[i, 0]} {points[i, 1]} {points[i, 2]} {colors[i, 2]} {colors[i, 1]} {colors[i, 0]}\n"
-                )
-            else:
-                f.write(f"{points[i, 0]} {points[i, 1]} {points[i, 2]}\n")
-
+from realsense_frame.utils import depth_to_pointcloud, write_pointcloud_to_ply, create_colorbar
 
 class RealSenseAligner:
     def __init__(self, color_intr, depth_intr):
@@ -176,13 +115,16 @@ def main(session_path, export_ply):
                 cv2.convertScaleAbs(frame.depth, alpha=0.03), cv2.COLORMAP_JET
             )
 
+            # Generate and add colorbar for depth
+            colorbar = create_colorbar(depth_vis.shape[0])
+            depth_with_colorbar = np.hstack((depth_vis, colorbar))
+            valid_imgs.append(depth_with_colorbar)
+
             if aligner and frame.color is not None:
                 depth_scale = frame.metadata.get("depth_units", 0.001)
                 aligned_depth = aligner.align(frame.depth, frame.color, depth_scale)
                 # We could add aligned_depth to valid_imgs if desired,
                 # but for now let's keep it consistent with capture
-
-            valid_imgs.append(depth_vis)
 
         # Tile images in a grid (same logic as capture)
         if valid_imgs:
