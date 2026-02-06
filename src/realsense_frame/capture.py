@@ -226,23 +226,40 @@ class RealSenseCapture:
             cf = fs.get_color_frame()
             if cf:
                 cv2.imwrite(os.path.join(fdir, "color.png"), np.asanyarray(cf.get_data()))
-                meta.update({"color_ts": cf.get_timestamp(), "color_fn": cf.get_frame_number()})
+                meta.update({
+                    "color_ts": cf.get_timestamp(), 
+                    "color_ts_domain": str(cf.get_frame_timestamp_domain()),
+                    "color_fn": cf.get_frame_number()
+                })
         if self.has_depth:
             df = fs.get_depth_frame()
             if df:
                 with open(os.path.join(fdir, "depth.zst"), "wb") as f: f.write(self.cctx.compress(np.asanyarray(df.get_data()).tobytes()))
-                meta.update({"depth_ts": df.get_timestamp(), "depth_fn": df.get_frame_number(), "depth_units": df.get_units()})
+                meta.update({
+                    "depth_ts": df.get_timestamp(), 
+                    "depth_ts_domain": str(df.get_frame_timestamp_domain()),
+                    "depth_fn": df.get_frame_number(), 
+                    "depth_units": df.get_units()
+                })
 
         if self.has_infra1:
             if1 = fs.get_infrared_frame(1)
             if if1:
                 cv2.imwrite(os.path.join(fdir, "infra_1.png"), np.asanyarray(if1.get_data()))
-                meta.update({"infra1_ts": if1.get_timestamp(), "infra1_fn": if1.get_frame_number()})
+                meta.update({
+                    "infra1_ts": if1.get_timestamp(), 
+                    "infra1_ts_domain": str(if1.get_frame_timestamp_domain()),
+                    "infra1_fn": if1.get_frame_number()
+                })
         if self.has_infra2:
             if2 = fs.get_infrared_frame(2)
             if if2:
                 cv2.imwrite(os.path.join(fdir, "infra_2.png"), np.asanyarray(if2.get_data()))
-                meta.update({"infra2_ts": if2.get_timestamp(), "infra2_fn": if2.get_frame_number()})
+                meta.update({
+                    "infra2_ts": if2.get_timestamp(), 
+                    "infra2_ts_domain": str(if2.get_frame_timestamp_domain()),
+                    "infra2_fn": if2.get_frame_number()
+                })
 
         if self.has_accel or self.has_gyro:
             with open(os.path.join(fdir, "imu.jsonl"), "w") as f:
