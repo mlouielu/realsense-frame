@@ -1,6 +1,6 @@
+import click
 import cv2
 import numpy as np
-import argparse
 import realsense_align as ra
 from realsense_frame.loader import SessionLoader
 
@@ -31,32 +31,30 @@ class RealSenseAligner:
         # ra.align_z_to_other(depth_frame, color_frame, depth_intrin, color_intrin, extrin, scale)
         return ra.align_z_to_other(depth_image, color_image, self.d_int, self.c_int, self.extrin, depth_scale)
 
-def main():
-    parser = argparse.ArgumentParser(description="Visualize RealSense Capture Session")
-    parser.add_argument("session_path", help="Path to the session directory")
-    args = parser.parse_args()
-
+@click.command()
+@click.argument("session_path", type=click.Path(exists=True, file_okay=False, dir_okay=True))
+def main(session_path):
+    """Visualize a RealSense capture session."""
     try:
-        loader = SessionLoader(args.session_path)
+        loader = SessionLoader(session_path)
     except Exception as e:
-        print(f"Failed to load session: {e}")
-        return
+        raise click.ClickException(f"Failed to load session: {e}")
 
     c_intr, d_intr = loader.get_intrinsics()
     aligner = None
     if c_intr and d_intr:
-        print("Intrinsics found. Using realsense-align.")
+        click.echo("Intrinsics found. Using realsense-align.")
         try:
             aligner = RealSenseAligner(c_intr, d_intr)
         except Exception as e:
-            print(f"Failed to initialize aligner: {e}")
+            click.echo(f"Warning: Failed to initialize aligner: {e}")
     else:
-        print("Warning: Intrinsics missing. Alignment disabled.")
+        click.echo("Warning: Intrinsics missing. Alignment disabled.")
 
-    print(f"Loaded {len(loader)} frames. Controls:")
-    print("  [n/Right]: Next Frame")
-    print("  [p/Left]:  Previous Frame")
-    print("  [q]:       Quit")
+    click.echo(f"Loaded {len(loader)} frames. Controls:")
+    click.echo("  [n/Right]: Next Frame")
+    click.echo("  [p/Left]:  Previous Frame")
+    click.echo("  [q]:       Quit")
 
     idx = 0
     while True:

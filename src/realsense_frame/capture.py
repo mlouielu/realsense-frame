@@ -1,3 +1,5 @@
+import click
+import sys
 import pyrealsense2 as rs
 import numpy as np
 import cv2
@@ -5,7 +7,6 @@ import json
 import os
 import time
 import zstandard as zstd
-import argparse
 import toml
 import queue
 from datetime import datetime
@@ -26,8 +27,7 @@ class RealSenseCapture:
         self.ctx = rs.context()
         devices = self.ctx.query_devices()
         if not devices:
-            print("No RealSense devices found!")
-            return
+            raise click.ClickException("No RealSense devices found!")
 
         device = devices[0]
         print(f"Using device: {device.get_info(rs.camera_info.name)}")
@@ -192,12 +192,15 @@ class RealSenseCapture:
             if self.imu_file: self.imu_file.close()
             cv2.destroyAllWindows()
 
-def main():
-    p = argparse.ArgumentParser()
-    p.add_argument("--output", default="captures")
-    p.add_argument("--config", default="config.toml")
-    args = p.parse_args()
-    RealSenseCapture(args.output, args.config).run()
+@click.command()
+@click.option("--output", default="captures", help="Output directory for captures.")
+@click.option("--config", default="config.toml", help="Path to the configuration file.")
+def main(output, config):
+    try:
+        RealSenseCapture(output, config).run()
+    except click.ClickException as e:
+        click.echo(f"Error: {e.message}")
+        sys.exit(1)
 
 if __name__ == "__main__":
     main()
