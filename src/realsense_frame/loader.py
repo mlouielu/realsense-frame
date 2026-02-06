@@ -6,6 +6,7 @@ import zstandard as zstd
 import glob
 from dataclasses import dataclass
 from typing import Optional, Dict, List
+from realsense_frame.utils import RealSenseAligner
 
 
 @dataclass
@@ -18,6 +19,40 @@ class FrameData:
     infra2: Optional["VisualArray"] = None
     metadata: Dict = None
     imu_samples: List[Dict] = None
+    _aligner: Optional["RealSenseAligner"] = None
+    _align_target: Optional[str] = None
+
+    def d2c(self) -> "VisualArray":
+        """Align Depth to the viewpoint of the target stream (Color or Infra)."""
+        if not self._aligner:
+            return VisualArray(None, "Alignment Failed: Aligner not initialized")
+
+        if getattr(self.depth, "_is_placeholder", True):
+            return VisualArray(None, "Alignment Failed: Depth data missing")
+
+        # Use the specific target the aligner was built for
+        target = None
+        if self._align_target == "color":
+            target = self.color
+        elif self._align_target == "infra1":
+            target = self.infra1
+
+        if target is None or getattr(target, "_is_placeholder", True):
+            return VisualArray(
+                None, f"Alignment Failed: Target stream '{self._align_target}' missing"
+            )
+
+        try:
+            scale = self.metadata.get("depth_units", 0.001)
+            aligned = self._aligner.align(self.depth, target, scale)
+            return VisualArray(aligned, f"Frame {self.index} - Aligned Depth")
+        except Exception as e:
+            return VisualArray(None, f"Alignment Error: {e}")
+
+    def c2d(self) -> "VisualArray":
+        """Align Color to Depth viewpoint."""
+        print("Warning: c2d() is not yet supported by the realsense-align backend.")
+        return VisualArray(None, "c2d() Not Supported")
 
     def show(self, wait=True):
         """Display all available streams in this frame."""
@@ -67,8 +102,12 @@ class VisualArray(np.ndarray):
 
     def __new__(cls, input_array, title="Stream"):
         if input_array is None:
-            return None
-        obj = np.asanyarray(input_array).view(cls)
+            # Create a 1x1 black placeholder to avoid returning None
+            obj = np.zeros((1, 1), dtype=np.uint8).view(cls)
+            obj._is_placeholder = True
+        else:
+            obj = np.asanyarray(input_array).view(cls)
+            obj._is_placeholder = False
         obj._title = title
         return obj
 
@@ -76,16 +115,30 @@ class VisualArray(np.ndarray):
         if obj is None:
             return
         self._title = getattr(obj, "_title", "Stream")
+        self._is_placeholder = getattr(obj, "_is_placeholder", False)
 
     def show(self, title=None, wait=True):
         t = title or self._title
-        display_img = np.asanyarray(self)
-        if self.dtype == np.uint16:
-            display_img = cv2.applyColorMap(
-                cv2.convertScaleAbs(display_img, alpha=0.03), cv2.COLORMAP_JET
+        if getattr(self, "_is_placeholder", False):
+            # Display a clear error message instead of crashing
+            display_img = np.zeros((480, 640, 3), dtype=np.uint8)
+            cv2.putText(
+                display_img,
+                f"NOT AVAILABLE: {t}",
+                (40, 240),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.6,
+                (0, 0, 255),
+                2,
             )
-        elif len(display_img.shape) == 2:
-            display_img = cv2.cvtColor(display_img, cv2.COLOR_GRAY2BGR)
+        else:
+            display_img = np.asanyarray(self)
+            if self.dtype == np.uint16:
+                display_img = cv2.applyColorMap(
+                    cv2.convertScaleAbs(display_img, alpha=0.03), cv2.COLORMAP_JET
+                )
+            elif len(display_img.shape) == 2:
+                display_img = cv2.cvtColor(display_img, cv2.COLOR_GRAY2BGR)
 
         cv2.imshow(t, display_img)
         if wait:
@@ -106,6 +159,47 @@ class SessionLoader:
         self.frame_dirs = sorted(glob.glob(os.path.join(session_path, "frame_*")))
 
         self.dctx = zstd.ZstdDecompressor()
+
+        # Initialize Aligner with robust intrinsics discovery
+        self.aligner = None
+        self.align_target = None
+
+        # 1. Try to get intrinsics from config.json
+        c_intr = self.config.get("color_intrinsics")
+        i_intr = self.config.get("infra1_intrinsics")
+        d_intr = self.config.get("depth_intrinsics")
+
+        # 2. Fallback: Check the first frame if config is empty/missing
+        if (not d_intr or not (c_intr or i_intr)) and self.frame_dirs:
+            first_frame_meta_path = os.path.join(self.frame_dirs[0], "metadata.json")
+            if os.path.exists(first_frame_meta_path):
+                with open(first_frame_meta_path, "r") as f:
+                    meta = json.load(f)
+                    d_intr = d_intr or meta.get("depth_intrinsics")
+                    c_intr = c_intr or meta.get("color_intrinsics")
+                    i_intr = i_intr or meta.get("infra1_intrinsics")
+
+        # Helper to check if intrinsics are valid (not None and not empty)
+        def is_valid(intr):
+            return intr and isinstance(intr, dict) and "width" in intr
+
+        # Prioritize color, fallback to infra1
+        print(c_intr, d_intr)
+        if is_valid(c_intr) and is_valid(d_intr):
+            try:
+                self.aligner = RealSenseAligner(c_intr, d_intr)
+                self.align_target = "color"
+            except Exception as e:
+                print(f"Warning: Failed to initialize color aligner: {e}")
+        elif is_valid(i_intr) and is_valid(d_intr):
+            try:
+                self.aligner = RealSenseAligner(i_intr, d_intr)
+                self.align_target = "infra1"
+                print("Note: Aligning to infra1 (no color intrinsics found)")
+            except Exception as e:
+                print(f"Warning: Failed to initialize infra aligner: {e}")
+        else:
+            print("Warning: No valid intrinsics found. Alignment will be disabled.")
 
     def _load_json(self, path):
         if os.path.exists(path):
@@ -187,4 +281,6 @@ class SessionLoader:
             infra2=VisualArray(infra2, "Infrared 2"),
             metadata=meta,
             imu_samples=imu_samples,
+            _aligner=self.aligner,
+            _align_target=self.align_target,
         )

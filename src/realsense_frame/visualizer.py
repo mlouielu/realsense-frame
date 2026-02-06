@@ -1,49 +1,14 @@
 import click
 import cv2
 import numpy as np
-import realsense_align as ra
-from realsense_frame.loader import SessionLoader
+from realsense_frame.loader import SessionLoader, RealSenseAligner
 from loguru import logger
-from realsense_frame.utils import depth_to_pointcloud, write_pointcloud_to_ply, create_colorbar
-
-class RealSenseAligner:
-    def __init__(self, color_intr, depth_intr):
-        # Initialize Intrinsics using realsense-align API
-        # Model 0 usually corresponds to None/distortion-free/Brown-Conrady in bindings
-        # ra.Intrinsics(model, width, height, fx, fy, ppx, ppy)
-        self.d_int = ra.Intrinsics(
-            0,
-            depth_intr["width"],
-            depth_intr["height"],
-            depth_intr["fx"],
-            depth_intr["fy"],
-            depth_intr["ppx"],
-            depth_intr["ppy"],
-        )
-
-        self.c_int = ra.Intrinsics(
-            0,
-            color_intr["width"],
-            color_intr["height"],
-            color_intr["fx"],
-            color_intr["fy"],
-            color_intr["ppx"],
-            color_intr["ppy"],
-        )
-
-        # Identity Extrinsics (Rotation 3x3 flat, Translation 1x3)
-        self.extrin = ra.Extrinsics(
-            [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0], [0.0, 0.0, 0.0]
-        )
-
-    def align(self, depth_image, color_image, depth_scale=0.001):
-        if depth_image is None or color_image is None:
-            return None
-
-        # ra.align_z_to_other(depth_frame, color_frame, depth_intrin, color_intrin, extrin, scale)
-        return ra.align_z_to_other(
-            depth_image, color_image, self.d_int, self.c_int, self.extrin, depth_scale
-        )
+from realsense_frame.utils import (
+    depth_to_pointcloud,
+    write_pointcloud_to_ply,
+    create_colorbar,
+)
+import os  # Import os for path manipulation
 
 
 @click.command()
@@ -65,19 +30,13 @@ def main(session_path, export_ply):
     except Exception as e:
         raise click.ClickException(f"Failed to load session: {e}")
 
-    intrinsics = loader.get_intrinsics()
-    c_intr = intrinsics.get("color")
-    d_intr = intrinsics.get("depth")
-
-    aligner = None
-    if c_intr and d_intr:
+    aligner = loader.aligner
+    if aligner:
         logger.info("Intrinsics found. Using realsense-align.")
-        try:
-            aligner = RealSenseAligner(c_intr, d_intr)
-        except Exception as e:
-            logger.warning(f"Failed to initialize aligner: {e}")
     else:
-        logger.warning("Intrinsics missing. Alignment disabled.")
+        logger.warning(
+            "Intrinsics missing or failed to initialize. Alignment disabled."
+        )
 
     logger.info(f"Loaded {len(loader)} frames. Controls:")
     logger.info("  [n/Right]: Next Frame")
