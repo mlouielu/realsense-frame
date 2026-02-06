@@ -99,8 +99,23 @@ class RealSenseCapture:
         self.fps_counters = {}
         self.stream_fps = {}
 
-        self.profile = self.pipeline.start(self.config, self.frame_callback)
-        
+        # Validate Depth/IR matching for Stereo Module
+        if self.has_depth and (self.has_infra1 or self.has_infra2):
+            d = self.settings.get("depth", {})
+            i = self.settings.get("infrared", {})
+            if d.get("width") != i.get("width") or d.get("height") != i.get("height") or d.get("fps") != i.get("fps"):
+                logger.warning("Resolution/FPS mismatch detected between Depth and Infrared!")
+                logger.warning("On most RealSense devices, these must match because they share the same sensor.")
+
+        try:
+            self.profile = self.pipeline.start(self.config, self.frame_callback)
+        except RuntimeError as e:
+            if "Couldn't resolve requests" in str(e):
+                logger.error("!!! RealSense Error: Couldn't resolve requests !!!")
+                logger.error("This usually means your Depth and Infrared resolutions or FPS do not match.")
+                logger.error("Please ensure [depth] and [infrared] in config.toml have identical width, height, and fps.")
+            raise click.ClickException(str(e))
+
         # Get Depth Sensor for Emitter Control
         self.depth_sensor = self.profile.get_device().first_depth_sensor()
         self.emitter_enabled = True
@@ -178,7 +193,15 @@ class RealSenseCapture:
         logger.info("="*40 + "\n")
 
     def save_session_config(self):
-        cfg = {}
+        device = self.profile.get_device()
+        cfg = {
+            "device": {
+                "name": device.get_info(rs.camera_info.name),
+                "serial_number": device.get_info(rs.camera_info.serial_number),
+                "firmware_version": device.get_info(rs.camera_info.firmware_version),
+                "usb_type": device.get_info(rs.camera_info.usb_type_descriptor) if device.supports(rs.camera_info.usb_type_descriptor) else "unknown"
+            }
+        }
         if self.has_color: cfg["color_intrinsics"] = self.get_intrinsics(self.profile.get_stream(rs.stream.color))
         if self.has_depth: cfg["depth_intrinsics"] = self.get_intrinsics(self.profile.get_stream(rs.stream.depth))
         if self.has_infra1: cfg["infra1_intrinsics"] = self.get_intrinsics(self.profile.get_stream(rs.stream.infrared, 1))
