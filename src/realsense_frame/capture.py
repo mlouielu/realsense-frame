@@ -184,7 +184,9 @@ class RealSenseCapture:
             logger.info("Depth-to-Color alignment enabled (using hardware extrinsics)")
         elif self.has_depth and self.has_infra1:
             self.align = rs.align(rs.stream.infrared)
-            logger.info("Depth-to-Infrared alignment enabled (using hardware extrinsics)")
+            logger.info(
+                "Depth-to-Infrared alignment enabled (using hardware extrinsics)"
+            )
 
         self.print_summary()
         self.save_session_config()
@@ -1021,7 +1023,14 @@ def list_streams_command():
     default=None,
     help="Frame range to export, e.g. '0-5' or '3'. Defaults to all.",
 )
-def export_ply_command(session_path, output, frames):
+@click.option(
+    "--max-depth",
+    "-d",
+    default=5.0,
+    type=float,
+    help="Maximum depth in meters. Points beyond this are filtered out.",
+)
+def export_ply_command(session_path, output, frames, max_depth):
     """Export aligned colored point clouds as PLY files."""
     from realsense_frame.loader import SessionLoader
     from realsense_frame.utils import depth_to_pointcloud, write_pointcloud_to_ply
@@ -1055,9 +1064,7 @@ def export_ply_command(session_path, output, frames):
 
     click.echo(f"Session: {session_path}")
     click.echo(f"Alignment target: {loader.align_target}")
-    click.echo(
-        f"Extrinsics: {'yes' if loader.aligner.extrinsics else 'no (identity)'}"
-    )
+    click.echo(f"Extrinsics: {'yes' if loader.aligner.extrinsics else 'no (identity)'}")
     click.echo(f"Exporting frames {start}-{end - 1} to {out_dir}/")
 
     for i in range(start, end):
@@ -1074,7 +1081,9 @@ def export_ply_command(session_path, output, frames):
             continue
 
         scale = frame.metadata.get("depth_units", 0.001)
-        points, colors = depth_to_pointcloud(aligned, target, target_intr, scale)
+        points, colors = depth_to_pointcloud(
+            aligned, target, target_intr, scale, max_depth=max_depth
+        )
 
         ply_path = os.path.join(out_dir, f"frame_{i:05d}.ply")
         write_pointcloud_to_ply(ply_path, points, colors)

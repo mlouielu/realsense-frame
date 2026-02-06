@@ -4,8 +4,12 @@ import os
 import realsense_align as ra
 
 
-def depth_to_pointcloud(depth_image, color_image, depth_intrinsics, depth_scale=0.001):
-    """Converts a depth image and color image to a colored 3D point cloud."""
+def depth_to_pointcloud(depth_image, color_image, depth_intrinsics, depth_scale=0.001, max_depth=10.0):
+    """Converts a depth image and color image to a colored 3D point cloud.
+
+    Args:
+        max_depth: Maximum depth in meters. Points beyond this are filtered out.
+    """
     depth = np.asarray(depth_image, dtype=np.float32) * depth_scale
     color = np.asarray(color_image)
 
@@ -25,7 +29,8 @@ def depth_to_pointcloud(depth_image, color_image, depth_intrinsics, depth_scale=
     # BGR -> RGB
     colors = color.reshape(-1, 3)[:, ::-1].copy()
 
-    valid = z.reshape(-1) > 0
+    z_flat = z.reshape(-1)
+    valid = (z_flat > 0) & (z_flat <= max_depth)
     return points[valid].astype(np.float32), colors[valid].astype(np.uint8)
 
 
