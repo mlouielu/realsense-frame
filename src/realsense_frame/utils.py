@@ -6,62 +6,65 @@ import realsense_align as ra
 
 def depth_to_pointcloud(depth_image, color_image, depth_intrinsics, depth_scale=0.001):
     """Converts a depth image and color image to a colored 3D point cloud."""
-    # Ensure depth_image is float32 for calculations
-    depth_image = depth_image.astype(np.float32) * depth_scale
+    depth = np.asarray(depth_image, dtype=np.float32) * depth_scale
+    color = np.asarray(color_image)
 
-    # Get intrinsics
     fx = depth_intrinsics["fx"]
     fy = depth_intrinsics["fy"]
     ppx = depth_intrinsics["ppx"]
     ppy = depth_intrinsics["ppy"]
 
-    h, w = depth_image.shape
+    h, w = depth.shape
+    u, v = np.meshgrid(np.arange(w, dtype=np.float32), np.arange(h, dtype=np.float32))
 
-    # Create a grid of pixel coordinates
-    u, v = np.meshgrid(np.arange(w), np.arange(h))
-
-    # Calculate 3D points
-    z = depth_image
+    z = depth
     x = (u - ppx) * z / fx
     y = (v - ppy) * z / fy
 
-    points = np.stack((x, y, z), axis=-1)
+    points = np.stack((x, y, z), axis=-1).reshape(-1, 3)
+    # BGR -> RGB
+    colors = color.reshape(-1, 3)[:, ::-1].copy()
 
-    # Reshape for PLY
-    points = points.reshape(-1, 3)
-    colors = color_image.reshape(-1, 3)  # Assuming BGR, will convert to RGB for PLY
-
-    # Filter out invalid points (where depth is 0)
-    valid_mask = z.reshape(-1) > 0
-    points = points[valid_mask]
-    colors = colors[valid_mask]
-
-    return points, colors
+    valid = z.reshape(-1) > 0
+    return points[valid].astype(np.float32), colors[valid].astype(np.uint8)
 
 
 def write_pointcloud_to_ply(filename, points, colors=None):
-    """Writes a point cloud to a PLY file."""
-    with open(filename, "w") as f:
-        f.write("ply\n")
-        f.write("format ascii 1.0\n")
-        f.write(f"element vertex {len(points)}\n")
-        f.write("property float x\n")
-        f.write("property float y\n")
-        f.write("property float z\n")
-        if colors is not None:
-            f.write("property uchar red\n")
-            f.write("property uchar green\n")
-            f.write("property uchar blue\n")
-        f.write("end_header\n")
+    """Writes a point cloud to a binary little-endian PLY file."""
+    import struct
 
-        for i in range(len(points)):
-            if colors is not None:
-                # OpenCV uses BGR, PLY usually expects RGB
-                f.write(
-                    f"{points[i, 0]} {points[i, 1]} {points[i, 2]} {colors[i, 2]} {colors[i, 1]} {colors[i, 0]}\n"
-                )
-            else:
-                f.write(f"{points[i, 0]} {points[i, 1]} {points[i, 2]}\n")
+    pts = np.asarray(points, dtype=np.float32)
+    header = "ply\nformat binary_little_endian 1.0\n"
+    header += f"element vertex {len(pts)}\n"
+    header += "property float x\nproperty float y\nproperty float z\n"
+
+    if colors is not None:
+        clrs = np.asarray(colors, dtype=np.uint8)
+        header += "property uchar red\nproperty uchar green\nproperty uchar blue\n"
+        # Pack as [x y z r g b] per vertex
+        vertex = np.empty(len(pts), dtype=[
+            ('x', '<f4'), ('y', '<f4'), ('z', '<f4'),
+            ('r', 'u1'), ('g', 'u1'), ('b', 'u1'),
+        ])
+        vertex['x'] = pts[:, 0]
+        vertex['y'] = pts[:, 1]
+        vertex['z'] = pts[:, 2]
+        vertex['r'] = clrs[:, 0]
+        vertex['g'] = clrs[:, 1]
+        vertex['b'] = clrs[:, 2]
+    else:
+        vertex = np.empty(len(pts), dtype=[
+            ('x', '<f4'), ('y', '<f4'), ('z', '<f4'),
+        ])
+        vertex['x'] = pts[:, 0]
+        vertex['y'] = pts[:, 1]
+        vertex['z'] = pts[:, 2]
+
+    header += "end_header\n"
+
+    with open(filename, "wb") as f:
+        f.write(header.encode("ascii"))
+        f.write(vertex.tobytes())
 
 
 def create_colorbar(
