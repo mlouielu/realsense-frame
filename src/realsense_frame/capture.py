@@ -35,24 +35,35 @@ class RealSenseCapture:
         self.available_streams = []
         for sensor in device.query_sensors():
             for profile in sensor.get_stream_profiles():
-                self.available_streams.append(profile.stream_type())
+                self.available_streams.append((profile.stream_type(), profile.stream_index()))
 
-        fmt_map = {"bgr8": rs.format.bgr8, "rgb8": rs.format.rgb8, "z16": rs.format.z16, "yuyv": rs.format.yuyv}
+        fmt_map = {"bgr8": rs.format.bgr8, "rgb8": rs.format.rgb8, "z16": rs.format.z16, "yuyv": rs.format.yuyv, "y8": rs.format.y8}
 
-        self.has_color = rs.stream.color in self.available_streams
+        self.has_color = any(s[0] == rs.stream.color for s in self.available_streams)
         if self.has_color:
             c = self.settings.get("color", {})
             self.config.enable_stream(rs.stream.color, c.get("width", 640), c.get("height", 480),
                                      fmt_map.get(c.get("format", "bgr8"), rs.format.bgr8), c.get("fps", 30))
 
-        self.has_depth = rs.stream.depth in self.available_streams
+        self.has_depth = any(s[0] == rs.stream.depth for s in self.available_streams)
         if self.has_depth:
             d = self.settings.get("depth", {})
             self.config.enable_stream(rs.stream.depth, d.get("width", 640), d.get("height", 480),
                                      fmt_map.get(d.get("format", "z16"), rs.format.z16), d.get("fps", 30))
 
-        self.has_accel = rs.stream.accel in self.available_streams
-        self.has_gyro = rs.stream.gyro in self.available_streams
+        self.has_infra1 = any(s[0] == rs.stream.infrared and s[1] == 1 for s in self.available_streams)
+        self.has_infra2 = any(s[0] == rs.stream.infrared and s[1] == 2 for s in self.available_streams)
+        if self.has_infra1 or self.has_infra2:
+            i = self.settings.get("infrared", {})
+            if self.has_infra1:
+                self.config.enable_stream(rs.stream.infrared, 1, i.get("width", 640), i.get("height", 480),
+                                         fmt_map.get(i.get("format", "y8"), rs.format.y8), i.get("fps", 30))
+            if self.has_infra2:
+                self.config.enable_stream(rs.stream.infrared, 2, i.get("width", 640), i.get("height", 480),
+                                         fmt_map.get(i.get("format", "y8"), rs.format.y8), i.get("fps", 30))
+
+        self.has_accel = any(s[0] == rs.stream.accel for s in self.available_streams)
+        self.has_gyro = any(s[0] == rs.stream.gyro for s in self.available_streams)
         if self.has_accel:
             self.config.enable_stream(rs.stream.accel, rs.format.motion_xyz32f, self.settings.get("accel", {}).get("fps", 0))
         if self.has_gyro:
@@ -82,6 +93,7 @@ class RealSenseCapture:
     def load_config(self, path):
         default = {"color": {"width": 640, "height": 480, "fps": 30, "format": "bgr8"},
                    "depth": {"width": 640, "height": 480, "fps": 30, "format": "z16"},
+                   "infrared": {"width": 640, "height": 480, "fps": 30, "format": "y8"},
                    "accel": {"fps": 0}, "gyro": {"fps": 0}}
         if path and os.path.exists(path):
             try:
@@ -127,6 +139,8 @@ class RealSenseCapture:
         cfg = {}
         if self.has_color: cfg["color_intrinsics"] = self.get_intrinsics(self.profile.get_stream(rs.stream.color))
         if self.has_depth: cfg["depth_intrinsics"] = self.get_intrinsics(self.profile.get_stream(rs.stream.depth))
+        if self.has_infra1: cfg["infra1_intrinsics"] = self.get_intrinsics(self.profile.get_stream(rs.stream.infrared, 1))
+        if self.has_infra2: cfg["infra2_intrinsics"] = self.get_intrinsics(self.profile.get_stream(rs.stream.infrared, 2))
         with open(os.path.join(self.session_dir, "config.json"), "w") as f: json.dump(cfg, f, indent=4)
 
     def get_intrinsics(self, p):
@@ -151,6 +165,17 @@ class RealSenseCapture:
                 with open(os.path.join(fdir, "depth.zst"), "wb") as f: f.write(self.cctx.compress(np.asanyarray(df.get_data()).tobytes()))
                 meta.update({"depth_ts": df.get_timestamp(), "depth_fn": df.get_frame_number(), "depth_units": df.get_units()})
 
+        if self.has_infra1:
+            if1 = fs.get_infrared_frame(1)
+            if if1:
+                cv2.imwrite(os.path.join(fdir, "infra_1.png"), np.asanyarray(if1.get_data()))
+                meta.update({"infra1_ts": if1.get_timestamp(), "infra1_fn": if1.get_frame_number()})
+        if self.has_infra2:
+            if2 = fs.get_infrared_frame(2)
+            if if2:
+                cv2.imwrite(os.path.join(fdir, "infra_2.png"), np.asanyarray(if2.get_data()))
+                meta.update({"infra2_ts": if2.get_timestamp(), "infra2_fn": if2.get_frame_number()})
+
         if self.has_accel or self.has_gyro:
             with open(os.path.join(fdir, "imu.jsonl"), "w") as f:
                 combined = sorted(self.detector.accel_history + self.detector.gyro_history, key=lambda x: x['ts'])
@@ -174,8 +199,12 @@ class RealSenseCapture:
                     cf = fs.get_color_frame()
                     if cf: img = np.asanyarray(cf.get_data())
                     else:
-                        df = fs.get_depth_frame()
-                        img = cv2.applyColorMap(cv2.convertScaleAbs(np.asanyarray(df.get_data()), alpha=0.03), cv2.COLORMAP_JET)
+                        if1 = fs.get_infrared_frame(1)
+                        if if1:
+                            img = cv2.cvtColor(np.asanyarray(if1.get_data()), cv2.COLOR_GRAY2BGR)
+                        else:
+                            df = fs.get_depth_frame()
+                            img = cv2.applyColorMap(cv2.convertScaleAbs(np.asanyarray(df.get_data()), alpha=0.03), cv2.COLORMAP_JET)
                     # Overlay stability score
                     stability_score = self.detector.get_stability_score()
                     score_text = f"Stability: {stability_score:.2f}"

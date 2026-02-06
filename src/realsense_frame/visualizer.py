@@ -74,7 +74,7 @@ class RealSenseAligner:
         self.c_int = ra.Intrinsics(0, 
                                    color_intr["width"], color_intr["height"],
                                    color_intr["fx"], color_intr["fy"],
-                                   color_intr["ppx"], c_intr["ppy"])
+                                   color_intr["ppx"], color_intr["ppy"])
         
         # Identity Extrinsics (Rotation 3x3 flat, Translation 1x3)
         self.extrin = ra.Extrinsics([1.0, 0.0, 0.0, 
@@ -101,7 +101,10 @@ def main(session_path, export_ply):
     except Exception as e:
         raise click.ClickException(f"Failed to load session: {e}")
 
-    c_intr, d_intr = loader.get_intrinsics()
+    intrinsics = loader.get_intrinsics()
+    c_intr = intrinsics.get("color")
+    d_intr = intrinsics.get("depth")
+
     aligner = None
     if c_intr and d_intr:
         click.echo("Intrinsics found. Using realsense-align.")
@@ -128,6 +131,19 @@ def main(session_path, export_ply):
         if frame.color is not None:
             images.append(frame.color)
         
+        if frame.infra1 is not None:
+            # Convert to BGR for visualization consistency if it's grayscale
+            if len(frame.infra1.shape) == 2:
+                images.append(cv2.cvtColor(frame.infra1, cv2.COLOR_GRAY2BGR))
+            else:
+                images.append(frame.infra1)
+
+        if frame.infra2 is not None:
+            if len(frame.infra2.shape) == 2:
+                images.append(cv2.cvtColor(frame.infra2, cv2.COLOR_GRAY2BGR))
+            else:
+                images.append(frame.infra2)
+
         aligned_d_vis = None
         aligned_depth = None # Initialize aligned_depth for PLY export
         if frame.depth is not None:
@@ -145,8 +161,9 @@ def main(session_path, export_ply):
                 aligned_d_vis = cv2.applyColorMap(cv2.convertScaleAbs(aligned_depth, alpha=0.03), cv2.COLORMAP_MAGMA)
             
             # Ensure raw depth visualization matches color height for display
-            if frame.color is not None and depth_vis.shape[:2] != frame.color.shape[:2]:
-                depth_vis = cv2.resize(depth_vis, (frame.color.shape[1], frame.color.shape[0]))
+            ref_img = frame.color if frame.color is not None else (frame.infra1 if frame.infra1 is not None else None)
+            if ref_img is not None and depth_vis.shape[:2] != ref_img.shape[:2]:
+                depth_vis = cv2.resize(depth_vis, (ref_img.shape[1], ref_img.shape[0]))
             
             images.append(depth_vis)
             

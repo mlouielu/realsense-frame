@@ -13,8 +13,10 @@ class FrameData:
     timestamp: str
     color: Optional[np.ndarray]
     depth: Optional[np.ndarray]
-    metadata: Dict
-    imu_samples: List[Dict]
+    infra1: Optional[np.ndarray] = None
+    infra2: Optional[np.ndarray] = None
+    metadata: Dict = None
+    imu_samples: List[Dict] = None
 
 class SessionLoader:
     def __init__(self, session_path: str):
@@ -40,7 +42,12 @@ class SessionLoader:
         return len(self.frame_dirs)
 
     def get_intrinsics(self):
-        return self.config.get("color_intrinsics"), self.config.get("depth_intrinsics")
+        return {
+            "color": self.config.get("color_intrinsics"),
+            "depth": self.config.get("depth_intrinsics"),
+            "infra1": self.config.get("infra1_intrinsics"),
+            "infra2": self.config.get("infra2_intrinsics")
+        }
 
     def get_frame(self, idx: int) -> FrameData:
         if idx < 0 or idx >= len(self.frame_dirs):
@@ -54,6 +61,13 @@ class SessionLoader:
         # Load Color
         color_path = os.path.join(frame_dir, "color.png")
         color = cv2.imread(color_path) if os.path.exists(color_path) else None
+
+        # Load Infrared
+        infra1_path = os.path.join(frame_dir, "infra_1.png")
+        infra1 = cv2.imread(infra1_path, cv2.IMREAD_UNCHANGED) if os.path.exists(infra1_path) else None
+        
+        infra2_path = os.path.join(frame_dir, "infra_2.png")
+        infra2 = cv2.imread(infra2_path, cv2.IMREAD_UNCHANGED) if os.path.exists(infra2_path) else None
         
         # Load Depth (ZST Compressed)
         depth = None
@@ -65,13 +79,13 @@ class SessionLoader:
                 # Assume Z16 (uint16)
                 depth = np.frombuffer(decompressed, dtype=np.uint16)
                 # We need to reshape. Use intrinsics or metadata to find shape
-                # Fallback: metadata might not store W/H, check config
                 d_intr = self.config.get("depth_intrinsics")
                 if d_intr:
                     depth = depth.reshape((d_intr["height"], d_intr["width"]))
                 elif color is not None:
-                     # Fallback assumption if same res
                     depth = depth.reshape((color.shape[0], color.shape[1]))
+                elif infra1 is not None:
+                    depth = depth.reshape((infra1.shape[0], infra1.shape[1]))
 
         # Load Frame-Specific IMU
         imu_samples = []
@@ -86,6 +100,8 @@ class SessionLoader:
             timestamp=meta.get("ts_iso", ""),
             color=color,
             depth=depth,
+            infra1=infra1,
+            infra2=infra2,
             metadata=meta,
             imu_samples=imu_samples
         )
