@@ -1,0 +1,120 @@
+{
+    "device": {
+        "name": "Intel RealSense D456",
+        "serial_number": "318122301926",
+        "firmware_version": "5.16.0.1",
+        "usb_type": "3.2"
+    },
+    "color_intrinsics": {
+        "width": 1280,
+        "height": 720,
+        "ppx": 651.5843505859375,
+        "ppy": 365.50836181640625,
+        "fx": 645.3905029296875,
+        "fy": 644.4722290039062,
+        "model": "distortion.inverse_brown_conrady",
+        "coeffs": [
+            -0.05532652884721756,
+            0.06587284058332443,
+            -0.00046246417332440615,
+            0.0005159095162525773,
+            -0.021114282310009003
+        ]
+    },
+    "depth_intrinsics": {
+        "width": 1280,
+        "height": 720,
+        "ppx": 644.9913940429688,
+        "ppy": 364.5303039550781,
+        "fx": 647.3213500976562,
+        "fy": 647.3213500976562,
+        "model": "distortion.brown_conrady",
+        "coeffs": [
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0
+        ]
+    },
+    "infra1_intrinsics": {
+        "width": 1280,
+        "height": 720,
+        "ppx": 644.9913940429688,
+        "ppy": 364.5303039550781,
+        "fx": 647.3213500976562,
+        "fy": 647.3213500976562,
+        "model": "distortion.brown_conrady",
+        "coeffs": [
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0
+        ]
+    },
+    "infra2_intrinsics": {
+        "width": 1280,
+        "height": 720,
+        "ppx": 644.9913940429688,
+        "ppy": 364.5303039550781,
+        "fx": 647.3213500976562,
+        "fy": 647.3213500976562,
+        "model": "distortion.brown_conrady",
+        "coeffs": [
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0
+        ]
+    },
+    "depth_sensor_current_options": {
+        "Exposure": 33000.0,
+        "Gain": 16.0,
+        "Enable Auto Exposure": 1.0,
+        "Visual Preset": "Custom",
+        "Laser Power": 250.0,
+        "Emitter Enabled": 1.0,
+        "Frames Queue Size": 16.0,
+        "Asic Temperature": 34.0,
+        "Error Polling Enabled": 1.0,
+        "Projector Temperature": 29.0,
+        "Output Trigger Enabled": 0.0,
+        "Depth Units": 0.0010000000474974513,
+        "Stereo Baseline": 94.93994903564453,
+        "Inter Cam Sync Mode": 0.0,
+        "Emitter On Off": 0.0,
+        "Global Time Enabled": 1.0,
+        "Emitter Always On": 0.0,
+        "Thermal Compensation": 1.0,
+        "Hdr Enabled": 0.0,
+        "Sequence Name": 0.0,
+        "Sequence Size": 2.0,
+        "Sequence Id": 0.0,
+        "Auto Exposure Limit": 200000.0,
+        "Auto Gain Limit": 248.0,
+        "Auto Exposure Limit Toggle": 0.0,
+        "Auto Gain Limit Toggle": 0.0,
+        "Emitter Frequency": 0.0,
+        "Auto Exposure Mode": 0.0
+    },
+    "depth_to_color_extrinsics": {
+        "rotation": [
+            0.9999996423721313,
+            9.06084242160432e-05,
+            -0.000828640884719789,
+            -9.048826177604496e-05,
+            1.0,
+            0.00014504455612041056,
+            0.0008286539814434946,
+            -0.0001449695264454931,
+            0.9999996423721313
+        ],
+        "translation": [
+            -0.059085436165332794,
+            -0.00011570008064154536,
+            0.00036427739541977644
+        ]
+    }
+}

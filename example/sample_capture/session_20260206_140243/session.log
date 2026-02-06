@@ -1,0 +1,31 @@
+2026-02-06 14:02:43.539 | INFO     | realsense_frame.capture:__init__:51 - Using device: Intel RealSense D456
+2026-02-06 14:02:43.750 | INFO     | realsense_frame.capture:_apply_depth_sensor_settings:339 - Depth sensor option 'Laser Power' set to 250
+2026-02-06 14:02:43.751 | INFO     | realsense_frame.capture:_apply_depth_sensor_settings:360 - Depth sensor option 'Visual Preset' set to 'Custom'
+2026-02-06 14:02:43.762 | INFO     | realsense_frame.capture:_apply_depth_sensor_settings:370 - Depth sensor option 'Enable Auto Exposure' set to True
+2026-02-06 14:02:43.762 | INFO     | realsense_frame.capture:print_summary:258 - 
+========================================
+2026-02-06 14:02:43.762 | INFO     | realsense_frame.capture:print_summary:259 - CAPTURE SESSION STARTED
+2026-02-06 14:02:43.763 | INFO     | realsense_frame.capture:print_summary:260 - Output: sample_capture/session_20260206_140243
+2026-02-06 14:02:43.763 | INFO     | realsense_frame.capture:print_summary:261 - ----------------------------------------
+2026-02-06 14:02:43.763 | INFO     | realsense_frame.capture:print_summary:262 - Streams:
+2026-02-06 14:02:43.763 | INFO     | realsense_frame.capture:print_summary:268 -   - Depth: 1280x720 @ 15fps (Z16)
+2026-02-06 14:02:43.764 | INFO     | realsense_frame.capture:print_summary:268 -   - Infrared 1: 1280x720 @ 15fps (Y8)
+2026-02-06 14:02:43.764 | INFO     | realsense_frame.capture:print_summary:268 -   - Infrared 2: 1280x720 @ 15fps (Y8)
+2026-02-06 14:02:43.764 | INFO     | realsense_frame.capture:print_summary:268 -   - Color: 1280x720 @ 15fps (BGR8)
+2026-02-06 14:02:43.764 | INFO     | realsense_frame.capture:print_summary:272 -   - Gyro: 200Hz
+2026-02-06 14:02:43.764 | INFO     | realsense_frame.capture:print_summary:272 -   - Accel: 100Hz
+2026-02-06 14:02:43.764 | INFO     | realsense_frame.capture:print_summary:273 - ========================================
+
+2026-02-06 14:02:50.094 | INFO     | realsense_frame.capture:run:821 - [!] Auto-capture: ENABLED
+2026-02-06 14:02:50.523 | DEBUG    | realsense_frame.capture:save_frame:478 - Frame saved: frame_00000_20260206_140250_405956
+2026-02-06 14:02:50.523 | INFO     | realsense_frame.capture:run:804 - [*] Auto-capture saved: frame_00000
+2026-02-06 14:02:52.952 | DEBUG    | realsense_frame.capture:save_frame:478 - Frame saved: frame_00001_20260206_140252_842705
+2026-02-06 14:02:52.952 | INFO     | realsense_frame.capture:run:804 - [*] Auto-capture saved: frame_00001
+2026-02-06 14:02:55.097 | DEBUG    | realsense_frame.capture:save_frame:478 - Frame saved: frame_00002_20260206_140255_041297
+2026-02-06 14:02:55.097 | INFO     | realsense_frame.capture:run:804 - [*] Auto-capture saved: frame_00002
+2026-02-06 14:02:57.155 | DEBUG    | realsense_frame.capture:save_frame:478 - Frame saved: frame_00003_20260206_140257_102411
+2026-02-06 14:02:57.155 | INFO     | realsense_frame.capture:run:804 - [*] Auto-capture saved: frame_00003
+2026-02-06 14:02:59.213 | DEBUG    | realsense_frame.capture:save_frame:478 - Frame saved: frame_00004_20260206_140259_161182
+2026-02-06 14:02:59.213 | INFO     | realsense_frame.capture:run:804 - [*] Auto-capture saved: frame_00004
+2026-02-06 14:03:01.295 | DEBUG    | realsense_frame.capture:save_frame:478 - Frame saved: frame_00005_20260206_140301_241643
+2026-02-06 14:03:01.295 | INFO     | realsense_frame.capture:run:804 - [*] Auto-capture saved: frame_00005

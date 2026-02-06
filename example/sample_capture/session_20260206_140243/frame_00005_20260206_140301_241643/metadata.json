@@ -1,0 +1,28 @@
+{
+    "index": 5,
+    "ts_iso": "2026-02-06T14:03:01.241816",
+    "trigger": "auto",
+    "color_ts": 1770404580703.9656,
+    "color_ts_domain": "timestamp_domain.global_time",
+    "color_fn": 248,
+    "depth_ts": 1770404580703.9023,
+    "depth_ts_domain": "timestamp_domain.global_time",
+    "depth_fn": 244,
+    "depth_units": 0.0010000000474974513,
+    "infra1_ts": 1770404580703.9023,
+    "infra1_ts_domain": "timestamp_domain.global_time",
+    "infra1_fn": 242,
+    "infra2_ts": 1770404580703.9023,
+    "infra2_ts_domain": "timestamp_domain.global_time",
+    "infra2_fn": 242,
+    "accel": {
+        "x": 1.2160245180130005,
+        "y": -9.581096649169922,
+        "z": -1.6769371032714844
+    },
+    "gyro": {
+        "x": 0.007456046529114246,
+        "y": -0.019174186512827873,
+        "z": -0.022369883954524994
+    }
+}
