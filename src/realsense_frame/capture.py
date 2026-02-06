@@ -9,6 +9,7 @@ import time
 import zstandard as zstd
 import toml
 import queue
+import shutil
 from datetime import datetime
 from realsense_frame.stability import StabilityDetector
 
@@ -85,8 +86,20 @@ class RealSenseCapture:
         self.frames_queue = queue.Queue(maxsize=2)
         self.cctx = zstd.ZstdCompressor(level=3)
         self.frame_count = 0
+        self.dropped_frames = 0
+        self.start_time = time.time()
+        self.last_fps_time = time.time()
+        self.fps_counters = {}
+        self.stream_fps = {}
 
         self.profile = self.pipeline.start(self.config, self.frame_callback)
+        
+        # Get Depth Sensor for Emitter Control
+        self.depth_sensor = self.profile.get_device().first_depth_sensor()
+        self.emitter_enabled = True
+        if self.depth_sensor.supports(rs.option.emitter_enabled):
+             self.emitter_enabled = bool(self.depth_sensor.get_option(rs.option.emitter_enabled))
+
         self.print_summary()
         self.save_session_config()
 
@@ -104,6 +117,24 @@ class RealSenseCapture:
         return default
 
     def frame_callback(self, frame):
+        now = time.time()
+        
+        # Track FPS for this specific frame's stream(s)
+        if frame.is_frameset():
+            for f in frame.as_frameset():
+                s_name = f.get_profile().stream_name()
+                self.fps_counters[s_name] = self.fps_counters.get(s_name, 0) + 1
+        else:
+            s_name = frame.get_profile().stream_name()
+            self.fps_counters[s_name] = self.fps_counters.get(s_name, 0) + 1
+
+        if now - self.last_fps_time >= 1.0:
+            dt = now - self.last_fps_time
+            for s_name, count in self.fps_counters.items():
+                self.stream_fps[s_name] = count / dt
+            self.fps_counters = {k: 0 for k in self.fps_counters} # Reset counts
+            self.last_fps_time = now
+
         if frame.is_motion_frame():
             data = frame.as_motion_frame().get_motion_data()
             ts = frame.get_timestamp()
@@ -120,6 +151,8 @@ class RealSenseCapture:
         elif frame.is_frameset():
             if not self.frames_queue.full():
                 self.frames_queue.put(frame.as_frameset())
+            else:
+                self.dropped_frames += 1
 
     def print_summary(self):
         print("\n" + "="*40)
@@ -239,7 +272,7 @@ class RealSenseCapture:
         return valid_imgs[0] # Fallback
 
     def run(self):
-        print("Commands: [c] Capture, [a] Toggle Auto, [v] Switch View, [q] Quit")
+        print("Commands: [c] Capture, [a] Toggle Auto, [v] Switch View, [l] Toggle Laser, [q] Quit")
         auto, last_auto = False, 0
         auto_period = 2.0 # Minimum period for auto-capture
         self.last_capture_ts = 0
@@ -251,68 +284,113 @@ class RealSenseCapture:
         if self.has_infra2: display_modes.append("infra2")
         current_mode_idx = 0
 
+        # Disk usage check throttle
+        last_disk_check = 0
+        free_space_gb = 0.0
+
         try:
             while True:
                 try: fs = self.frames_queue.get(timeout=0.1)
                 except queue.Empty: fs = None
                 
+                # Check warm-up
+                is_warmup = (time.time() - self.start_time) < 2.0
+
                 if fs:
                     img = self._get_display_image(fs, display_modes[current_mode_idx])
                     
-                    # Overlay Info
-                    infos = []
-                    
-                    # Stability / IMU Status
+                    # Update Disk Usage (every 2s)
+                    if time.time() - last_disk_check > 2.0:
+                        try:
+                            total, used, free = shutil.disk_usage(self.session_dir)
+                            free_space_gb = free / (1024**3)
+                        except: pass
+                        last_disk_check = time.time()
+
+                    # Stability Check
+                    is_stable = False
+                    stability_score = 0.0
                     if self.has_accel or self.has_gyro:
                         stability_score = self.detector.get_stability_score()
                         is_stable = self.detector.is_stable()
-                        color = (0, 255, 0) if is_stable else (0, 0, 255)
-                        infos.append((f"Stability: {stability_score:.2f}", color))
                     else:
-                        infos.append(("No IMU", (200, 200, 200)))
-                        
-                    infos.append((f"Auto: {'ON' if auto else 'OFF'}", (0, 255, 255) if auto else (200, 200, 200)))
-                    infos.append((f"View: {display_modes[current_mode_idx].upper()}", (255, 255, 0)))
+                        is_stable = True # Assume stable if no IMU
 
-                    y0 = img.shape[0] - 20
+                    # Visual Stability Border
+                    border_color = (0, 255, 0) if is_stable else (0, 0, 255)
+                    img = cv2.copyMakeBorder(img, 10, 10, 10, 10, cv2.BORDER_CONSTANT, value=border_color)
+
+                    # Overlay Info
+                    infos = []
+                    
+                    if is_warmup:
+                        infos.append(("WARMUP...", (0, 165, 255)))
+                    else:
+                        # Stability / IMU Status
+                        if self.has_accel or self.has_gyro:
+                            infos.append((f"Stability: {stability_score:.2f}", border_color))
+                        else:
+                            infos.append(("No IMU", (200, 200, 200)))
+                            
+                        infos.append((f"Auto: {'ON' if auto else 'OFF'}", (0, 255, 255) if auto else (200, 200, 200)))
+                        infos.append((f"View: {display_modes[current_mode_idx].upper()}", (255, 255, 0)))
+                        infos.append((f"Emitter: {'ON' if self.emitter_enabled else 'OFF'}", (0, 255, 0) if self.emitter_enabled else (0, 0, 255)))
+                        
+                        # Stats
+                        fps_list = []
+                        # Priority order for video streams
+                        for priority in ["Color", "Depth", "Infrared 1", "Infrared 2"]:
+                            if priority in self.stream_fps:
+                                fps_list.append(f"{priority[0]}:{self.stream_fps[priority]:.0f}")
+                        
+                        if fps_list:
+                            infos.append(("FPS: " + " ".join(fps_list), (255, 255, 255)))
+
+                        infos.append((f"Drops: {self.dropped_frames}", (0, 0, 255) if self.dropped_frames > 0 else (255, 255, 255)))
+                        infos.append((f"Disk: {free_space_gb:.1f} GB", (255, 255, 255) if free_space_gb > 10 else (0, 0, 255)))
+
+                    y0 = img.shape[0] - 30
                     for i, (text, color) in enumerate(infos):
-                         cv2.putText(img, text, (10, y0 - (i * 25)), cv2.FONT_HERSHEY_SIMPLEX, 0.7, color, 2, cv2.LINE_AA)
+                         cv2.putText(img, text, (20, y0 - (i * 25)), cv2.FONT_HERSHEY_SIMPLEX, 0.7, color, 2, cv2.LINE_AA)
 
                     # Status Indicator (Hollow circle = working, Filled = captured)
-                    indicator_pos = (img.shape[1] - 40, 40)
+                    indicator_pos = (img.shape[1] - 50, 50)
                     is_capturing = time.time() - self.last_capture_ts < 0.3
                     
                     if is_capturing:
                         cv2.circle(img, indicator_pos, 20, (0, 255, 0), -1)
-                        cv2.putText(img, "CAPTURED", (img.shape[1] - 160, 45), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
+                        cv2.putText(img, "CAPTURED", (img.shape[1] - 170, 55), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
                     else:
                         cv2.circle(img, indicator_pos, 20, (0, 255, 0), 2) # Hollow circle
 
                     cv2.imshow("RealSense", img)
                     
                     # Auto Capture Logic
-                    has_imu = self.has_accel or self.has_gyro
-                    should_auto = False
-                    if auto and (time.time() - last_auto > auto_period):
-                        if has_imu:
-                            if self.detector.is_stable():
+                    if not is_warmup:
+                        should_auto = False
+                        if auto and (time.time() - last_auto > auto_period):
+                            if is_stable:
                                 should_auto = True
-                        else:
-                            should_auto = True # Always capture if auto is ON and no IMU
-                            
-                    if should_auto:
-                        self.save_frame(fs)
-                        last_auto = time.time()
+                                
+                        if should_auto:
+                            self.save_frame(fs)
+                            last_auto = time.time()
 
                 key = cv2.waitKey(1) & 0xFF
                 if key == ord('q'): break
-                elif key == ord('c') and fs: self.save_frame(fs)
-                elif key == ord('a'):
-                    auto = not auto
-                    print(f"Auto-capture: {'ON' if auto else 'OFF'}")
-                elif key == ord('v'):
-                    current_mode_idx = (current_mode_idx + 1) % len(display_modes)
-                    
+                elif not is_warmup:
+                    if key == ord('c') and fs: self.save_frame(fs)
+                    elif key == ord('a'):
+                        auto = not auto
+                        print(f"Auto-capture: {'ON' if auto else 'OFF'}")
+                    elif key == ord('v'):
+                        current_mode_idx = (current_mode_idx + 1) % len(display_modes)
+                    elif key == ord('l'):
+                         if self.depth_sensor.supports(rs.option.emitter_enabled):
+                            self.emitter_enabled = not self.emitter_enabled
+                            self.depth_sensor.set_option(rs.option.emitter_enabled, 1.0 if self.emitter_enabled else 0.0)
+                            print(f"Emitter: {'ON' if self.emitter_enabled else 'OFF'}")
+
         finally:
             self.pipeline.stop()
             if self.imu_file: self.imu_file.close()
