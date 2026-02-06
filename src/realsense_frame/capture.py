@@ -177,6 +177,15 @@ class RealSenseCapture:
 
         self._apply_depth_sensor_settings()
 
+        # Create aligner to align depth to color (if both streams are enabled)
+        self.align = None
+        if self.has_depth and self.has_color:
+            self.align = rs.align(rs.stream.color)
+            logger.info("Depth-to-Color alignment enabled (using hardware extrinsics)")
+        elif self.has_depth and self.has_infra1:
+            self.align = rs.align(rs.stream.infrared)
+            logger.info("Depth-to-Infrared alignment enabled (using hardware extrinsics)")
+
         self.print_summary()
         self.save_session_config()
 

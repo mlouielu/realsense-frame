@@ -114,7 +114,7 @@ def create_colorbar(
 
 
 class RealSenseAligner:
-    def __init__(self, target_intr, depth_intr):
+    def __init__(self, target_intr, depth_intr, extrinsics=None):
         # ra.Intrinsics(model, width, height, fx, fy, ppx, ppy)
         self.d_int = ra.Intrinsics(
             str(depth_intr.get("model", "distortion.brown_conrady")),
@@ -134,8 +134,19 @@ class RealSenseAligner:
             target_intr["ppx"],
             target_intr["ppy"],
         )
+        self.extrinsics = None
+        if extrinsics:
+            self.extrinsics = ra.Extrinsics(
+                rotation=extrinsics["rotation"],
+                translation=extrinsics["translation"],
+            )
 
     def align(self, depth_image, target_image, depth_scale=0.001):
         if depth_image is None or target_image is None:
             return None
-        return ra.align_z_to_other(depth_image, target_image, self.d_int, self.c_int, 1)
+        if self.extrinsics:
+            return ra.align_z_to_other(
+                depth_image, target_image, self.d_int, self.c_int, depth_scale,
+                depth_to_other=self.extrinsics,
+            )
+        return ra.align_z_to_other(depth_image, target_image, self.d_int, self.c_int, depth_scale)

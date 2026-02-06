@@ -183,17 +183,20 @@ class SessionLoader:
         def is_valid(intr):
             return intr and isinstance(intr, dict) and "width" in intr
 
+        # Load extrinsics if available
+        d2c_ext = self.config.get("depth_to_color_extrinsics")
+        d2i_ext = self.config.get("depth_to_infra1_extrinsics")
+
         # Prioritize color, fallback to infra1
-        print(c_intr, d_intr)
         if is_valid(c_intr) and is_valid(d_intr):
             try:
-                self.aligner = RealSenseAligner(c_intr, d_intr)
+                self.aligner = RealSenseAligner(c_intr, d_intr, extrinsics=d2c_ext)
                 self.align_target = "color"
             except Exception as e:
                 print(f"Warning: Failed to initialize color aligner: {e}")
         elif is_valid(i_intr) and is_valid(d_intr):
             try:
-                self.aligner = RealSenseAligner(i_intr, d_intr)
+                self.aligner = RealSenseAligner(i_intr, d_intr, extrinsics=d2i_ext)
                 self.align_target = "infra1"
                 print("Note: Aligning to infra1 (no color intrinsics found)")
             except Exception as e:
