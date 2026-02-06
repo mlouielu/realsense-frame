@@ -127,48 +127,45 @@ def main(session_path, export_ply):
         frame = loader.get_frame(idx)
         
         # Prepare Images
-        images = []
+        valid_imgs = []
         if frame.color is not None:
-            images.append(frame.color)
+            valid_imgs.append(frame.color)
         
         if frame.infra1 is not None:
-            # Convert to BGR for visualization consistency if it's grayscale
-            if len(frame.infra1.shape) == 2:
-                images.append(cv2.cvtColor(frame.infra1, cv2.COLOR_GRAY2BGR))
-            else:
-                images.append(frame.infra1)
+            valid_imgs.append(cv2.cvtColor(frame.infra1, cv2.COLOR_GRAY2BGR) if len(frame.infra1.shape) == 2 else frame.infra1)
 
         if frame.infra2 is not None:
-            if len(frame.infra2.shape) == 2:
-                images.append(cv2.cvtColor(frame.infra2, cv2.COLOR_GRAY2BGR))
-            else:
-                images.append(frame.infra2)
+            valid_imgs.append(cv2.cvtColor(frame.infra2, cv2.COLOR_GRAY2BGR) if len(frame.infra2.shape) == 2 else frame.infra2)
 
-        aligned_d_vis = None
-        aligned_depth = None # Initialize aligned_depth for PLY export
+        aligned_depth = None
         if frame.depth is not None:
-            # Colorize Raw Depth
             depth_vis = cv2.applyColorMap(cv2.convertScaleAbs(frame.depth, alpha=0.03), cv2.COLORMAP_JET)
             
             if aligner and frame.color is not None:
-                # Perform Alignment
                 depth_scale = frame.metadata.get("depth_units", 0.001)
-                
-                # Align depth to color resolution
                 aligned_depth = aligner.align(frame.depth, frame.color, depth_scale)
-                
-                # Visualize Aligned Depth
-                aligned_d_vis = cv2.applyColorMap(cv2.convertScaleAbs(aligned_depth, alpha=0.03), cv2.COLORMAP_MAGMA)
+                # We could add aligned_depth to valid_imgs if desired, 
+                # but for now let's keep it consistent with capture
             
-            # Ensure raw depth visualization matches color height for display
-            ref_img = frame.color if frame.color is not None else (frame.infra1 if frame.infra1 is not None else None)
-            if ref_img is not None and depth_vis.shape[:2] != ref_img.shape[:2]:
-                depth_vis = cv2.resize(depth_vis, (ref_img.shape[1], ref_img.shape[0]))
+            valid_imgs.append(depth_vis)
+
+        # Tile images in a grid (same logic as capture)
+        if valid_imgs:
+            count = len(valid_imgs)
+            h, w = valid_imgs[0].shape[:2]
+            resized = [cv2.resize(img, (w, h)) if img.shape[:2] != (h, w) else img for img in valid_imgs]
             
-            images.append(depth_vis)
-            
-        if aligned_d_vis is not None:
-            images.append(aligned_d_vis)
+            if count == 1: display = resized[0]
+            elif count == 2: display = np.hstack(resized)
+            elif count <= 4:
+                top = np.hstack(resized[:2])
+                bottom = np.hstack(resized[2:] + [np.zeros_like(resized[0])] * (2 - len(resized[2:])))
+                display = np.vstack([top, bottom])
+            else:
+                display = resized[0]
+        else:
+            display = np.zeros((480, 640, 3), dtype=np.uint8)
+            cv2.putText(display, "No Data", (50, 240), cv2.FONT_HERSHEY_SIMPLEX, 1, (255,255,255), 2)
             
         # PLY Export
         if export_ply and aligned_depth is not None and frame.color is not None and c_intr is not None:
@@ -176,22 +173,6 @@ def main(session_path, export_ply):
             points, colors = depth_to_pointcloud(aligned_depth, frame.color, c_intr, frame.metadata.get("depth_units", 0.001))
             write_pointcloud_to_ply(export_filename, points, colors)
             click.echo(f"Exported {export_filename}")
-
-        # Concatenate horizontally
-        if images:
-            h_max = max(img.shape[0] for img in images)
-            padded_images = []
-            for img in images:
-                if img.shape[0] < h_max:
-                    pad = np.zeros((h_max - img.shape[0], img.shape[1], 3), dtype=np.uint8)
-                    padded_images.append(np.vstack([img, pad]))
-                else:
-                    padded_images.append(img)
-            
-            display = np.hstack(padded_images)
-        else:
-            display = np.zeros((480, 640, 3), dtype=np.uint8)
-            cv2.putText(display, "No Data", (50, 240), cv2.FONT_HERSHEY_SIMPLEX, 1, (255,255,255), 2)
 
         # Overlay Info
         info_txt = [

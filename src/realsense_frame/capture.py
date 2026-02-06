@@ -187,40 +187,132 @@ class RealSenseCapture:
         with open(os.path.join(fdir, "metadata.json"), "w") as f: json.dump(meta, f, indent=4)
         print(f"Frame saved: {os.path.basename(fdir)}")
         self.frame_count += 1
+        self.last_capture_ts = time.time()
+
+    def _get_display_image(self, fs, mode="all"):
+        images = []
+        
+        # Helper to process image
+        def process(img, is_depth=False):
+            if img is None: return np.zeros((480, 640, 3), dtype=np.uint8)
+            data = np.asanyarray(img.get_data())
+            if is_depth:
+                return cv2.applyColorMap(cv2.convertScaleAbs(data, alpha=0.03), cv2.COLORMAP_JET)
+            if len(data.shape) == 2:
+                return cv2.cvtColor(data, cv2.COLOR_GRAY2BGR)
+            return data
+
+        # Collect available frames
+        c = process(fs.get_color_frame()) if self.has_color else None
+        d = process(fs.get_depth_frame(), is_depth=True) if self.has_depth else None
+        i1 = process(fs.get_infrared_frame(1)) if self.has_infra1 else None
+        i2 = process(fs.get_infrared_frame(2)) if self.has_infra2 else None
+
+        if mode == "color": return c if c is not None else np.zeros((480,640,3), np.uint8)
+        if mode == "depth": return d if d is not None else np.zeros((480,640,3), np.uint8)
+        if mode == "infra1": return i1 if i1 is not None else np.zeros((480,640,3), np.uint8)
+        if mode == "infra2": return i2 if i2 is not None else np.zeros((480,640,3), np.uint8)
+        
+        # Mode "all" - Tile images
+        valid_imgs = [x for x in [c, d, i1, i2] if x is not None]
+        if not valid_imgs: return np.zeros((480, 640, 3), dtype=np.uint8)
+        
+        # Simple grid layout
+        count = len(valid_imgs)
+        if count == 1: return valid_imgs[0]
+        
+        # Resize to match first image height for stacking
+        h, w = valid_imgs[0].shape[:2]
+        resized = []
+        for img in valid_imgs:
+            if img.shape[:2] != (h, w):
+                resized.append(cv2.resize(img, (w, h)))
+            else:
+                resized.append(img)
+                
+        if count == 2: return np.hstack(resized)
+        if count <= 4:
+            top = np.hstack(resized[:2])
+            bottom = np.hstack(resized[2:] + [np.zeros_like(resized[0])] * (2 - len(resized[2:])))
+            return np.vstack([top, bottom])
+            
+        return valid_imgs[0] # Fallback
 
     def run(self):
-        print("Commands: [c] Capture, [a] Toggle Auto, [q] Quit")
+        print("Commands: [c] Capture, [a] Toggle Auto, [v] Switch View, [q] Quit")
         auto, last_auto = False, 0
+        auto_period = 2.0 # Minimum period for auto-capture
+        self.last_capture_ts = 0
+        
+        display_modes = ["all"]
+        if self.has_color: display_modes.append("color")
+        if self.has_depth: display_modes.append("depth")
+        if self.has_infra1: display_modes.append("infra1")
+        if self.has_infra2: display_modes.append("infra2")
+        current_mode_idx = 0
+
         try:
             while True:
                 try: fs = self.frames_queue.get(timeout=0.1)
                 except queue.Empty: fs = None
+                
                 if fs:
-                    cf = fs.get_color_frame()
-                    if cf: img = np.asanyarray(cf.get_data())
+                    img = self._get_display_image(fs, display_modes[current_mode_idx])
+                    
+                    # Overlay Info
+                    infos = []
+                    
+                    # Stability / IMU Status
+                    if self.has_accel or self.has_gyro:
+                        stability_score = self.detector.get_stability_score()
+                        is_stable = self.detector.is_stable()
+                        color = (0, 255, 0) if is_stable else (0, 0, 255)
+                        infos.append((f"Stability: {stability_score:.2f}", color))
                     else:
-                        if1 = fs.get_infrared_frame(1)
-                        if if1:
-                            img = cv2.cvtColor(np.asanyarray(if1.get_data()), cv2.COLOR_GRAY2BGR)
-                        else:
-                            df = fs.get_depth_frame()
-                            img = cv2.applyColorMap(cv2.convertScaleAbs(np.asanyarray(df.get_data()), alpha=0.03), cv2.COLORMAP_JET)
-                    # Overlay stability score
-                    stability_score = self.detector.get_stability_score()
-                    score_text = f"Stability: {stability_score:.2f}"
-                    text_color = (0, 255, 0) if stability_score < self.detector.threshold else (0, 0, 255) # Green if stable, Red if unstable
-                    cv2.putText(img, score_text, (10, img.shape[0] - 20), cv2.FONT_HERSHEY_SIMPLEX, 0.7, text_color, 2, cv2.LINE_AA)
+                        infos.append(("No IMU", (200, 200, 200)))
+                        
+                    infos.append((f"Auto: {'ON' if auto else 'OFF'}", (0, 255, 255) if auto else (200, 200, 200)))
+                    infos.append((f"View: {display_modes[current_mode_idx].upper()}", (255, 255, 0)))
+
+                    y0 = img.shape[0] - 20
+                    for i, (text, color) in enumerate(infos):
+                         cv2.putText(img, text, (10, y0 - (i * 25)), cv2.FONT_HERSHEY_SIMPLEX, 0.7, color, 2, cv2.LINE_AA)
+
+                    # Status Indicator (Hollow circle = working, Filled = captured)
+                    indicator_pos = (img.shape[1] - 40, 40)
+                    is_capturing = time.time() - self.last_capture_ts < 0.3
+                    
+                    if is_capturing:
+                        cv2.circle(img, indicator_pos, 20, (0, 255, 0), -1)
+                        cv2.putText(img, "CAPTURED", (img.shape[1] - 160, 45), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
+                    else:
+                        cv2.circle(img, indicator_pos, 20, (0, 255, 0), 2) # Hollow circle
+
                     cv2.imshow("RealSense", img)
+                    
+                    # Auto Capture Logic
+                    has_imu = self.has_accel or self.has_gyro
+                    should_auto = False
+                    if auto and (time.time() - last_auto > auto_period):
+                        if has_imu:
+                            if self.detector.is_stable():
+                                should_auto = True
+                        else:
+                            should_auto = True # Always capture if auto is ON and no IMU
+                            
+                    if should_auto:
+                        self.save_frame(fs)
+                        last_auto = time.time()
+
                 key = cv2.waitKey(1) & 0xFF
                 if key == ord('q'): break
                 elif key == ord('c') and fs: self.save_frame(fs)
                 elif key == ord('a'):
                     auto = not auto
                     print(f"Auto-capture: {'ON' if auto else 'OFF'}")
-                if auto and fs and self.detector.is_stable():
-                    if time.time() - last_auto > 2:
-                        self.save_frame(fs)
-                        last_auto = time.time()
+                elif key == ord('v'):
+                    current_mode_idx = (current_mode_idx + 1) % len(display_modes)
+                    
         finally:
             self.pipeline.stop()
             if self.imu_file: self.imu_file.close()
