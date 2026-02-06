@@ -29,6 +29,13 @@ realsense-align = { git = "https://github.com/mlouielu/realsense-align", rev = "
 [project.scripts]
 realsense-frame = "realsense_frame.cli:main"
 
+[dependency-groups]
+notebooks = [
+    "jupyter",
+    "matplotlib",
+    "plotly",
+]
+
 [tool.pytest.ini_options]
 pythonpath = ["src"]
 testpaths = ["tests"]
