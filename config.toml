@@ -1,20 +1,24 @@
 [color]
-width = 640
-height = 480
-fps = 30
+width = 1280
+height = 720
+fps = 15
 format = "bgr8"
 
 [stereo]
 width = 1280
 height = 720
-fps = 6
+fps = 15
 enable_depth = true
 enable_infra = true
 depth_format = "z16"
 infra_format = "y8"
 
+[depth_sensor]
+visual_preset = "Custom"
+laser_power = 250
+
 [accel]
-fps = 0 # 0 means default/max supported
+fps = 100 # 0 means default/max supported
 
 [gyro]
-fps = 0
+fps = 200
