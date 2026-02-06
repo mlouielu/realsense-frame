@@ -13,7 +13,8 @@ import shutil
 from datetime import datetime
 from loguru import logger
 from realsense_frame.stability import StabilityDetector
-from realsense_frame.utils import create_colorbar # Import create_colorbar
+from realsense_frame.utils import create_colorbar  # Import create_colorbar
+
 
 class RealSenseCapture:
     def __init__(self, output_dir="captures", config_path=None):
@@ -173,9 +174,9 @@ class RealSenseCapture:
             self.emitter_enabled = bool(
                 self.depth_sensor.get_option(rs.option.emitter_enabled)
             )
-        
+
         self._apply_depth_sensor_settings()
-            
+
         self.print_summary()
         self.save_session_config()
 
@@ -193,12 +194,12 @@ class RealSenseCapture:
             },
             "accel": {"fps": 0},
             "gyro": {"fps": 0},
-            "depth_sensor": { # New section for depth sensor settings
-                "laser_power": 150, # Default laser power
-                "visual_preset": "Default", # Default visual preset
-                "enable_auto_exposure": True, # Default auto exposure
-                "exposure": 8500, # Default manual exposure for depth
-            }
+            "depth_sensor": {  # New section for depth sensor settings
+                "laser_power": 150,  # Default laser power
+                "visual_preset": "Default",  # Default visual preset
+                "enable_auto_exposure": True,  # Default auto exposure
+                "exposure": 8500,  # Default manual exposure for depth
+            },
         }
         if path and os.path.exists(path):
             try:
@@ -310,21 +311,27 @@ class RealSenseCapture:
                 if self.depth_sensor.supports(option):
                     try:
                         value = self.depth_sensor.get_option(option)
-                        option_name = str(option).split('.')[-1]
-                        
+                        option_name = str(option).split(".")[-1]
+
                         # Special handling for visual preset to store string name
                         if option == rs.option.visual_preset:
                             try:
-                                preset_name = self.depth_sensor.get_option_value_description(rs.option.visual_preset, value)
+                                preset_name = (
+                                    self.depth_sensor.get_option_value_description(
+                                        rs.option.visual_preset, value
+                                    )
+                                )
                                 current_depth_options[option_name] = preset_name
-                            except Exception: # Fallback if description not available for some reason
+                            except (
+                                Exception
+                            ):  # Fallback if description not available for some reason
                                 current_depth_options[option_name] = str(value)
                         else:
                             current_depth_options[option_name] = value
                     except Exception as e:
                         logger.warning(f"Could not get option {option_name}: {e}")
             cfg["depth_sensor_current_options"] = current_depth_options
-            
+
         with open(os.path.join(self.session_dir, "config.json"), "w") as f:
             json.dump(cfg, f, indent=4)
 
@@ -334,7 +341,9 @@ class RealSenseCapture:
 
         # Set Laser Power
         laser_power = depth_settings.get("laser_power")
-        if laser_power is not None and self.depth_sensor.supports(rs.option.laser_power):
+        if laser_power is not None and self.depth_sensor.supports(
+            rs.option.laser_power
+        ):
             self.depth_sensor.set_option(rs.option.laser_power, float(laser_power))
             logger.info(f"Depth sensor option 'Laser Power' set to {laser_power}")
 
@@ -345,33 +354,51 @@ class RealSenseCapture:
             preset_string_to_int_map = {}
             # Dynamically get available presets
             preset_range = self.depth_sensor.get_option_range(rs.option.visual_preset)
-            for i in range(int(preset_range.max) + 1): # Max is inclusive for presets
+            for i in range(int(preset_range.max) + 1):  # Max is inclusive for presets
                 try:
-                    description = self.depth_sensor.get_option_value_description(rs.option.visual_preset, i)
+                    description = self.depth_sensor.get_option_value_description(
+                        rs.option.visual_preset, i
+                    )
                     preset_string_to_int_map[description] = i
                 except RuntimeError:
                     # Some index might not have a description
                     pass
-            
+
             preset_value = preset_string_to_int_map.get(visual_preset_str)
-            
+
             if preset_value is not None:
                 self.depth_sensor.set_option(rs.option.visual_preset, int(preset_value))
-                logger.info(f"Depth sensor option 'Visual Preset' set to '{visual_preset_str}'")
+                logger.info(
+                    f"Depth sensor option 'Visual Preset' set to '{visual_preset_str}'"
+                )
             else:
-                logger.warning(f"Unknown visual preset: '{visual_preset_str}'. Available: {list(preset_string_to_int_map.keys())}")
-        
+                logger.warning(
+                    f"Unknown visual preset: '{visual_preset_str}'. Available: {list(preset_string_to_int_map.keys())}"
+                )
+
         # Set Auto Exposure and Exposure
         enable_auto_exposure = depth_settings.get("enable_auto_exposure")
         exposure = depth_settings.get("exposure")
 
-        if enable_auto_exposure is not None and self.depth_sensor.supports(rs.option.enable_auto_exposure):
-            self.depth_sensor.set_option(rs.option.enable_auto_exposure, 1.0 if enable_auto_exposure else 0.0)
-            logger.info(f"Depth sensor option 'Enable Auto Exposure' set to {enable_auto_exposure}")
-            
-        if not enable_auto_exposure and exposure is not None and self.depth_sensor.supports(rs.option.exposure):
+        if enable_auto_exposure is not None and self.depth_sensor.supports(
+            rs.option.enable_auto_exposure
+        ):
+            self.depth_sensor.set_option(
+                rs.option.enable_auto_exposure, 1.0 if enable_auto_exposure else 0.0
+            )
+            logger.info(
+                f"Depth sensor option 'Enable Auto Exposure' set to {enable_auto_exposure}"
+            )
+
+        if (
+            not enable_auto_exposure
+            and exposure is not None
+            and self.depth_sensor.supports(rs.option.exposure)
+        ):
             self.depth_sensor.set_option(rs.option.exposure, float(exposure))
-            logger.info(f"Depth sensor option 'Exposure' set to {exposure} (manual mode)")
+            logger.info(
+                f"Depth sensor option 'Exposure' set to {exposure} (manual mode)"
+            )
 
     def get_intrinsics(self, p):
         try:
@@ -505,9 +532,21 @@ class RealSenseCapture:
             h_d, w_d = d.shape[:2]
             center_x, center_y = w_d // 2, h_d // 2
             line_length = 10
-            crosshair_color = (0, 0, 255) # Red
-            cv2.line(d, (center_x - line_length, center_y), (center_x + line_length, center_y), crosshair_color, 1)
-            cv2.line(d, (center_x, center_y - line_length), (center_x, center_y + line_length), crosshair_color, 1)
+            crosshair_color = (0, 0, 255)  # Red
+            cv2.line(
+                d,
+                (center_x - line_length, center_y),
+                (center_x + line_length, center_y),
+                crosshair_color,
+                1,
+            )
+            cv2.line(
+                d,
+                (center_x, center_y - line_length),
+                (center_x, center_y + line_length),
+                crosshair_color,
+                1,
+            )
         i1 = process(fs.get_infrared_frame(1)) if self.has_infra1 else None
         i2 = process(fs.get_infrared_frame(2)) if self.has_infra2 else None
 
@@ -525,13 +564,13 @@ class RealSenseCapture:
         valid_imgs = []
         if c is not None:
             valid_imgs.append(c)
-        if d is not None: # d already contains the colorbar if depth is enabled
+        if d is not None:  # d already contains the colorbar if depth is enabled
             valid_imgs.append(d)
         if i1 is not None:
             valid_imgs.append(i1)
         if i2 is not None:
             valid_imgs.append(i2)
-            
+
         if not valid_imgs:
             return np.zeros((480, 640, 3), dtype=np.uint8)
 
@@ -549,7 +588,7 @@ class RealSenseCapture:
                 resized.append(cv2.resize(img, (new_w, h_max)))
             else:
                 resized.append(img)
-        
+
         # Now stack them
         count = len(resized)
         if count == 1:
@@ -561,13 +600,15 @@ class RealSenseCapture:
             # This part needs careful handling if widths are still different
             # For simplicity, let's assume they are similar enough or will be visually acceptable
             # For a grid, we need consistent dimensions in rows/cols
-            
+
             # Find max width in the first row for consistent stacking
-            max_w_row1 = max(img.shape[1] for img in resized[:min(count, 2)])
+            max_w_row1 = max(img.shape[1] for img in resized[: min(count, 2)])
             row1_padded = []
-            for img in resized[:min(count, 2)]:
+            for img in resized[: min(count, 2)]:
                 if img.shape[1] < max_w_row1:
-                    padding = np.zeros((h_max, max_w_row1 - img.shape[1], 3), dtype=img.dtype)
+                    padding = np.zeros(
+                        (h_max, max_w_row1 - img.shape[1], 3), dtype=img.dtype
+                    )
                     row1_padded.append(np.hstack((img, padding)))
                 else:
                     row1_padded.append(img)
@@ -578,7 +619,9 @@ class RealSenseCapture:
                 row2_padded = []
                 for img in resized[2:]:
                     if img.shape[1] < max_w_row2:
-                        padding = np.zeros((h_max, max_w_row2 - img.shape[1], 3), dtype=img.dtype)
+                        padding = np.zeros(
+                            (h_max, max_w_row2 - img.shape[1], 3), dtype=img.dtype
+                        )
                         row2_padded.append(np.hstack((img, padding)))
                     else:
                         row2_padded.append(img)
@@ -587,31 +630,39 @@ class RealSenseCapture:
                     padding = np.zeros((h_max, max_w_row2, 3), dtype=img.dtype)
                     row2_padded.append(padding)
                 bottom = np.hstack(row2_padded)
-                
+
                 # Ensure top and bottom have same width for vstack
                 max_final_w = max(top.shape[1], bottom.shape[1])
                 if top.shape[1] < max_final_w:
-                    padding = np.zeros((top.shape[0], max_final_w - top.shape[1], 3), dtype=top.dtype)
+                    padding = np.zeros(
+                        (top.shape[0], max_final_w - top.shape[1], 3), dtype=top.dtype
+                    )
                     top = np.hstack((top, padding))
                 elif bottom.shape[1] < max_final_w:
-                    padding = np.zeros((bottom.shape[0], max_final_w - bottom.shape[1], 3), dtype=bottom.dtype)
+                    padding = np.zeros(
+                        (bottom.shape[0], max_final_w - bottom.shape[1], 3),
+                        dtype=bottom.dtype,
+                    )
                     bottom = np.hstack((bottom, padding))
-                
-                return np.vstack([top, bottom])
-            else: # count is 1 or 2, handled above, or just top
-                return top
-        
-        return resized[0]  # Fallback for >4 images, or unhandled case
 
+                return np.vstack([top, bottom])
+            else:  # count is 1 or 2, handled above, or just top
+                return top
+
+        return resized[0]  # Fallback for >4 images, or unhandled case
 
     def run(self):
         print(
             "Commands: [c] Capture, [a] Toggle Auto, [v] Switch View, [l] Toggle Laser, [q] Quit"
         )
         auto, last_auto = False, 0
-        auto_period = 2.0  # Minimum period for auto-capture
+        auto_period = 2.0  # Cooldown between auto-captures
         self.last_capture_ts = 0
         latest_fs = None
+
+        was_stable = False
+        stable_start_time = 0
+        new_event = False
 
         display_modes = ["all"]
         if self.has_color:
@@ -771,13 +822,16 @@ class RealSenseCapture:
                         center_pixel_depth = depth_array[h_d // 2, w_d // 2]
                         depth_scale = df.get_units()
                         center_depth_m = center_pixel_depth * depth_scale
-                        
-                        if center_pixel_depth > 0: # Only display if valid depth
+
+                        if center_pixel_depth > 0:  # Only display if valid depth
                             depth_text = f"Center Depth: {center_depth_m:.2f}m"
                             cv2.putText(
                                 img,
                                 depth_text,
-                                (img.shape[1] // 2 - 100, 30), # Adjust position as needed
+                                (
+                                    img.shape[1] // 2 - 100,
+                                    30,
+                                ),  # Adjust position as needed
                                 cv2.FONT_HERSHEY_SIMPLEX,
                                 0.7,
                                 (255, 255, 255),
@@ -792,12 +846,25 @@ class RealSenseCapture:
 
                     cv2.imshow("RealSense", img)
 
-                    # Auto Capture Logic
+                    # Auto Capture Logic (Transition-based)
                     if not is_warmup:
                         should_auto = False
-                        if auto and (time.time() - last_auto > auto_period):
-                            if is_stable:
-                                should_auto = True
+
+                        if is_stable:
+                            if not was_stable:
+                                stable_start_time = time.time()
+                                new_event = True
+
+                            stable_duration = time.time() - stable_start_time
+
+                            if auto and stable_duration >= 0.1:
+                                cooldown_passed = time.time() - last_auto > auto_period
+                                # Trigger if it's a new stable position OR the timer expired
+                                if new_event or cooldown_passed:
+                                    should_auto = True
+                                    new_event = False
+
+                        was_stable = is_stable
 
                         if should_auto:
                             self.save_frame(fs, trigger="auto")
