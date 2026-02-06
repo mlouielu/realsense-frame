@@ -10,6 +10,12 @@ height = 720
 fps = 6
 format = "z16"
 
+[infrared]
+width = 1280
+height = 720
+fps = 6
+format = "y8"
+
 [accel]
 fps = 0 # 0 means default/max supported
 
